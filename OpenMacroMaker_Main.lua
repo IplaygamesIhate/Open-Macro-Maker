@@ -764,10 +764,10 @@ local function loop()
             end 
             
             local shift_held = select(2, pcall(reaper.ImGui_IsKeyDown, ctx, reaper.ImGui_Mod_Shift()))
+            -- CRITICAL FIX: The 90-pixel guillotine to protect the Header/HUD Z-order
             pcall(reaper.ImGui_SetCursorScreenPos, ctx, p_min_x, p_min_y + 90)
             if reaper.ImGui_SetNextItemAllowOverlap then pcall(reaper.ImGui_SetNextItemAllowOverlap, ctx) end
             UI.Safe_InvisibleButton(ctx, "##canvas_bg_catcher", avail_w, math.max(1.0, avail_h - 90))
-            -- CRITICAL FIX: Ensure ALL floating UI elements on the canvas can be clicked
             if reaper.ImGui_SetItemAllowOverlap then pcall(reaper.ImGui_SetItemAllowOverlap, ctx) end
             
             view_alpha = view_alpha + (((current_view == "MATRIX") and 1.0 or 0.0) - view_alpha) * (app_dt * 35.0)

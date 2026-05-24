@@ -656,12 +656,27 @@ function NodeUI.DrawNodeBlock(ctx, dl, n, n_idx, nodes, connections, env, UI, DS
                     local cw = comp.w and (is_lane and (comp.w * 0.8) or comp.w) or nil
                     local ch = comp.h and (is_lane and (comp.h * 0.8) or comp.h) or nil
 
+                    -- CRITICAL FIX: Subtract absolute panning offsets to prevent double-scroll detachment
                     local c_comp = { 
                         id = n.id..comp.id, 
                         x = sc_x + cx - ((env.p_min_x or 0) + (env.scroll_x or 0)), 
                         y = sc_y + cy - ((env.p_min_y or 0) + (env.scroll_y or 0)), 
-                        w = cw, h = ch, radius = crad, align = comp.align, color_token = comp.color_token, label = comp.label, default_val = comp.default_val, norm_to_real = comp.norm_to_real, real_to_norm = comp.real_to_norm, snap_array = comp.snap_array,
-                        steps = comp.steps, axis = comp.axis, wrap_at = comp.wrap_at, btn_w = comp.btn_w, btn_h = comp.btn_h, labels = comp.labels
+                        w = cw, 
+                        h = ch, 
+                        radius = crad, 
+                        align = comp.align, 
+                        color_token = comp.color_token, 
+                        label = comp.label, 
+                        default_val = comp.default_val, 
+                        norm_to_real = comp.norm_to_real, 
+                        real_to_norm = comp.real_to_norm, 
+                        snap_array = comp.snap_array,
+                        steps = comp.steps, 
+                        axis = comp.axis, 
+                        wrap_at = comp.wrap_at, 
+                        btn_w = comp.btn_w, 
+                        btn_h = comp.btn_h, 
+                        labels = comp.labels
                     }
 
                     -- 1. Z-Override Fallback
