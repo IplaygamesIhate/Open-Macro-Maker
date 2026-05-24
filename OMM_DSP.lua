@@ -37,10 +37,10 @@ function DSP.PushStateToMemory(n)
     local base_mem = 100000 + (n.gmem_slot * 2048)
     
     -- THE DARK SILICON BLOCK (Universal Utilities available to every plugin)
-    reaper.gmem_write(base_mem + 98, n.in_gain or 0.0)  -- Input Gain (dB)
-    reaper.gmem_write(base_mem + 99, n.out_gain or 0.0) -- Output Gain (dB)
-    reaper.gmem_write(base_mem + 100, n.pan or 0.0)     -- Pan (-1 to 1)
-    reaper.gmem_write(base_mem + 101, n.mix or 1.0)     -- Mix (0 to 1)
+    reaper.gmem_write(base_mem + 98, n.gain_in or n.in_gain or 0.0)   -- Input Trim (dB)
+    reaper.gmem_write(base_mem + 99, n.pan or 0.0)                    -- Pan (-1 to 1)
+    reaper.gmem_write(base_mem + 100, n.gain_out or n.out_gain or 0.0) -- Output Trim (dB)
+    reaper.gmem_write(base_mem + 101, (n.mix and n.mix > 1.0) and n.mix or ((n.mix or 1.0) * 100.0)) -- Mix (0 to 100)
 
     -- THE POLYMORPHIC ROUTING (Module Specifics)
     if n.type == "COMPRESSOR" then
@@ -82,7 +82,7 @@ end
 -- ==========================================
 -- THE DAW BRIDGES (JSFX Spawners)
 -- ==========================================
-local JSFX_VERSION = "// Version: v109.1"
+local JSFX_VERSION = "// Version: v109.2"
 
 function DSP.EnsureJSFXExists()
     local rp = reaper.GetResourcePath(); reaper.RecursiveCreateDirectory(rp .. "/Effects/OpenMacroMaker", 0)
@@ -137,10 +137,10 @@ i = 0; loop(16, mode = gmem[i * 10 + 0]; base_val = gmem[i * 10 + 1]; depth_val 
   knee_db   = max(0.001, gmem[base_mem + 3]);
   att_ms    = max(0.001, gmem[base_mem + 4]);
   rel_ms    = max(0.001, gmem[base_mem + 5]);
-  mix       = max(0.0, min(1.0, gmem[base_mem + 101]));
+  mix       = max(0.0, min(1.0, gmem[base_mem + 101] / 100));
   
   in_drive_lin = 10 ^ (gmem[base_mem + 98] / 20);
-  trim_lin     = 10 ^ (gmem[base_mem + 99] / 20);
+  trim_lin     = 10 ^ (gmem[base_mem + 100] / 20);
 
   // Write to delay line (Always running for Algo 5)
   delay_buf_L[delay_pos] = spl0;

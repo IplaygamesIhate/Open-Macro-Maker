@@ -10,20 +10,23 @@ Router._undo_active = false
 Router._last_sent = {}
 
 -- ==========================================
--- 1. INTERNAL PARAMETER DICTIONARIES
---    Each module type exposes a fixed set of internal parameters.
---    These are the params you can route an AuraKnob to WITHIN the module.
+-- 1. INTERNAL PARAMETER DIATIONARIES
 -- ==========================================
+local UNIVERSAL_PARAMS = {
+    { key = "gain_in",    label = "Input Trim",   min = -24.0, max = 24.0, default = 0.0,   gmem_offset = 98 },
+    { key = "pan",        label = "Pan",          min = -1.0,  max = 1.0,  default = 0.0,   gmem_offset = 99 },
+    { key = "gain_out",   label = "Output Trim",  min = -24.0, max = 24.0, default = 0.0,   gmem_offset = 100 },
+    { key = "mix",        label = "Dry/Wet Mix",  min = 0.0,   max = 100.0,default = 100.0, gmem_offset = 101 }
+}
+
 Router.INTERNAL_PARAMS = {
     COMPRESSOR = {
-        { key = "thresh",     label = "Threshold",    min = -60.0, max = 0.0,   default = -18.0 },
-        { key = "ratio",      label = "Ratio",        min = 1.0,   max = 100.0, default = 4.0   },
-        { key = "attack",     label = "Attack",       min = 0.1,   max = 200.0, default = 15.0  },
-        { key = "release",    label = "Release",      min = 10.0,  max = 2000.0,default = 150.0 },
-        { key = "knee",       label = "Knee",         min = 0.0,   max = 24.0,  default = 6.0   },
-        { key = "in_drive",   label = "Input Drive",  min = -24.0, max = 24.0,  default = 0.0   },
-        { key = "makeup",     label = "Makeup Gain",  min = -24.0, max = 24.0,  default = 0.0   },
-        { key = "mix",        label = "Mix",          min = 0.0,   max = 1.0,   default = 1.0   },
+        { key = "thresh",     label = "Threshold",    min = -60.0, max = 0.0,   default = -18.0, gmem_offset = 0 },
+        { key = "ratio",      label = "Ratio",        min = 1.0,   max = 100.0, default = 4.0,   gmem_offset = 1 },
+        { key = "attack",     label = "Attack",       min = 0.1,   max = 200.0, default = 15.0,  gmem_offset = 2 },
+        { key = "release",    label = "Release",      min = 10.0,  max = 2000.0,default = 150.0, gmem_offset = 3 },
+        { key = "knee",       label = "Knee",         min = 0.0,   max = 24.0,  default = 6.0,   gmem_offset = 4 },
+        { key = "makeup",     label = "Makeup",       min = -24.0, max = 24.0,  default = 0.0,   gmem_offset = 5 }
     },
     LFO = {
         { key = "rate_hz",    label = "Rate (Hz)",    min = 0.01,  max = 40.0,  default = 1.0   },
@@ -42,8 +45,41 @@ Router.INTERNAL_PARAMS = {
     },
     MACRO = {
         { key = "val",        label = "Value",        min = 0.0,   max = 1.0,   default = 0.0   },
-    },
+    }
 }
+
+-- Inject UNIVERSAL_PARAMS into every module type automatically
+setmetatable(Router.INTERNAL_PARAMS, {
+    __index = function(t, k) return UNIVERSAL_PARAMS end
+})
+for k, v in pairs(Router.INTERNAL_PARAMS) do
+    for _, up in ipairs(UNIVERSAL_PARAMS) do table.insert(v, up) end
+end
+
+-- ==========================================
+-- 2. GET/SET ROUTING ENGINE (Dark Silicon Hookup)
+-- ==========================================
+function Router.GetInternalParamValue(node, param_key)
+    local p_def = nil
+    local p_list = Router.INTERNAL_PARAMS[node.type] or UNIVERSAL_PARAMS
+    for _, p in ipairs(p_list) do if p.key == param_key then p_def = p; break end end
+    if not p_def then return 0.0 end
+    
+    local raw_val = reaper.gmem_read(100000 + node.gmem_slot * 2048 + p_def.gmem_offset)
+    if raw_val == 0.0 and param_key ~= "pan" and param_key ~= "gain_in" and param_key ~= "gain_out" then raw_val = p_def.default end
+    return (raw_val - p_def.min) / (p_def.max - p_def.min)
+end
+
+function Router.SetInternalParamValue(node, param_key, norm_val)
+    local p_def = nil
+    local p_list = Router.INTERNAL_PARAMS[node.type] or UNIVERSAL_PARAMS
+    for _, p in ipairs(p_list) do if p.key == param_key then p_def = p; break end end
+    if not p_def then return end
+    
+    local real_val = p_def.min + (norm_val * (p_def.max - p_def.min))
+    reaper.gmem_write(100000 + node.gmem_slot * 2048 + p_def.gmem_offset, real_val)
+end
+
 
 -- ==========================================
 -- 2. PARAMETER SCRAPER

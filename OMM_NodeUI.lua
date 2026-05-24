@@ -281,7 +281,7 @@ function NodeUI.LoadSchemaFromFile(algo_id)
                         end
                     end
                 end
-                NodeUI.SCHEMAS[algo_id] = schema_data.components
+                NodeUI.SCHEMAS[algo_id] = schema_data
                 if schema_data.seed_hex and NodeUI.PaletteEngine then
                     NodeUI.PALETTES[algo_id] = NodeUI.PaletteEngine.Generate(schema_data.seed_hex)
                 end
@@ -297,65 +297,36 @@ end
 
 function NodeUI.ScanForSchemas()
     NodeUI.LoadConfig()
-    for i = 0, 7 do NodeUI.LoadSchemaFromFile(i) end
-    NodeUI.LoadSchemaFromFile(100)
-    NodeUI.LoadSchemaFromFile(200)
-    NodeUI.LoadSchemaFromFile(999) -- Sandbox
-
-    -- Absolute Fallback
-    -- Absolute Fallback: Generates a base UI for ANY compressor so it never goes blank
-    for i = 0, 6 do
-        if not NodeUI.SCHEMAS[i] then
-            NodeUI.SCHEMAS[i] = {
-                { id = "bg_panel", type = "BackPanel", x = 0, y = 0, w = 480, h = 180, color_token = "Base" },
-                -- THE ALGO SELECTOR
-                { id = "algo_drop", type = "Dropdown", x = 20, y = 10, w = 150, h = 24, label = "COMP TYPE", color_token = "Accent", param_key = "algo", default_val = i,
-                  norm_to_real = function(n, node) 
-                      return math.floor(tonumber(n) or 0)
-                  end,
-                  real_to_norm = function(r, node)
-                      return tonumber(r) or 0
-                  end,
-                  routes = { { type = "INTERNAL", target = "algo", depth = 1.0, label = "Algorithm Select" } }
-                },
-                { id = "vfd_scr", type = "VFDScreen", x = 180, y = 10, w = 80, h = 24, label = "GR", color_token = "Teal" },
-                { id = "th", type = "InlineDrag", x = 20, y = 50, w = 60, h = 20, label = "TH", color_token = "Teal", param_key = "thresh", default_val = -18.0, routes = { { type = "INTERNAL", target = "thresh", depth = 1.0, label = "Threshold" } } },
-                { id = "rt_comp", type = "InlineDrag", x = 90, y = 50, w = 60, h = 20, label = "RATIO", color_token = "Teal", param_key = "ratio", default_val = 4.0, routes = { { type = "INTERNAL", target = "ratio", depth = 1.0, label = "Ratio" } } },
-                { id = "kn_att", type = "AuraKnob", x = 30, y = 100, radius = 20, label = "ATTACK", color_token = "Teal", param_key = "attack", default_val = 15.0, routes = { { type = "INTERNAL", target = "attack", depth = 1.0, label = "Attack" } } },
-                { id = "kn_rel", type = "AuraKnob", x = 90, y = 100, radius = 20, label = "RELEASE", color_token = "Teal", param_key = "release", default_val = 150.0, routes = { { type = "INTERNAL", target = "release", depth = 1.0, label = "Release" } } }
-            }
-        end
-    end
-    
-    if not NodeUI.SCHEMAS[100] then
-        NodeUI.SCHEMAS[100] = {
-            { id = "lfo_rate", type = "AuraKnob", x = 40, y = 40, radius = 24, label = "RATE", color_token = "Tangerine", param_key = "rate_hz", default_val = 0.5, routes = { { type = "INTERNAL", target = "rate_hz", depth = 1.0, label = "LFO Rate" } } },
-            { id = "lfo_depth", type = "AuraKnob", x = 120, y = 40, radius = 24, label = "DEPTH", color_token = "Teal", param_key = "depth", default_val = 1.0, routes = { { type = "INTERNAL", target = "depth", depth = 1.0, label = "LFO Depth" } } },
-            { id = "lfo_phase", type = "AuraKnob", x = 200, y = 40, radius = 24, label = "PHASE", color_token = "Accent_A", param_key = "phase_offset", default_val = 0.0, routes = { { type = "INTERNAL", target = "phase_offset", depth = 1.0, label = "LFO Phase" } } },
-            { id = "lfo_sync", type = "TogglePill", x = 40, y = 140, w = 50, h = 24, label = "SYNC", color_token = "Base", param_key = "sync", default_val = 0.0, routes = { { type = "INTERNAL", target = "sync", depth = 1.0, label = "Host Sync" } } }
-        }
-    end
-
-    if not NodeUI.SCHEMAS[200] then
-        NodeUI.SCHEMAS[200] = {
-            { id = "gain_vol", type = "AuraKnob", x = 80, y = 40, radius = 32, label = "OUTPUT", color_token = "Accent_B", param_key = "val", default_val = 0.75, routes = { { type = "INTERNAL", target = "val", depth = 1.0, label = "Output Volume" } } },
-            { id = "gain_pan", type = "AuraKnob", x = 180, y = 56, radius = 16, label = "PAN", color_token = "Teal", param_key = "pan", default_val = 0.5, routes = { { type = "INTERNAL", target = "pan", depth = 1.0, label = "Stereo Pan" } } },
-            { id = "gain_ext", type = "ToggleLever", x = 280, y = 40, w = 24, h = 50, label = "+24dB", color_token = "Base", param_key = "extended_range", default_val = 0.0, routes = { { type = "INTERNAL", target = "extended_range", depth = 1.0, label = "Ext Range" } } }
-        }
-    end
-    
-    -- Absolute Fallback Migration: ensure all schemas have routes populated
-    for algo, comps in pairs(NodeUI.SCHEMAS) do
-        for _, comp in ipairs(comps) do
-            if comp.param_key and not comp.routes then
-                if comp.param_key ~= "unmapped" and comp.param_key ~= "" then
-                    comp.routes = { { type = "INTERNAL", target = comp.param_key, depth = 1.0, label = comp.param_key } }
-                else
-                    comp.routes = {}
-                end
+    -- Scan the script directory for OMM_Schema_Algo_*.lua files
+    local i = 0
+    while true do
+        local f = reaper.EnumerateFiles(NodeUI.script_path, i)
+        if not f then break end
+        
+        local algo_id, theme = f:match("^OMM_Schema_Algo_(%d+)_(.+)\\.lua$")
+        if algo_id and theme then
+            local num_id = tonumber(algo_id) or algo_id
+            -- Only load if this matches the user's active theme selection for this algo
+            local active_theme = NodeUI.CONFIG.defaults[num_id] or "Default"
+            if theme == active_theme then
+                NodeUI.LoadSchemaFromFile(num_id)
             end
         end
+        i = i + 1
     end
+end
+
+-- Saftey Fallback if a UI file is completely missing
+function NodeUI.GetSchema(algo_id)
+    if NodeUI.SCHEMAS[algo_id] then return NodeUI.SCHEMAS[algo_id] end
+    return {
+        grid_cols = 12, grid_rows = 6, seed_hex = 0xFF0000, module_type = "ERROR",
+        components = {
+            { id = "err_bg", type = "BackPanel", x = 0, y = 0, w = 480, h = 180, color_token = "Base" },
+            { id = "err_txt", type = "TogglePill", x = 120, y = 60, w = 240, h = 60, align = 1, 
+              color_token = "Primary", label = "SCHEMA MISSING", default_val = 1.0, get_format = function() return "ERROR" end }
+        }
+    }
 end
 
 NodeUI.ScanForSchemas()
@@ -647,8 +618,13 @@ function NodeUI.DrawNodeBlock(ctx, dl, n, n_idx, nodes, connections, env, UI, DS
     local route_track = n.lane_guid and NodeUI.Router.GetTrackByGUID(n.lane_guid) or nil
 
     if n.type == "COMPRESSOR" or n.type == "LFO" or n.type == "GAIN" or is_sandbox then
-        local active_schema = NodeUI.SCHEMAS[n.algo] or NodeUI.SCHEMAS[0]
+        local schema = NodeUI.GetSchema(n.algo)
+        local active_schema = schema.components
         local active_palette = NodeUI.PALETTES[n.algo] or NodeUI.PALETTES[0]
+        if not active_palette and schema.seed_hex and NodeUI.PaletteEngine then
+            active_palette = NodeUI.PaletteEngine.Generate(schema.seed_hex)
+            NodeUI.PALETTES[n.algo] = active_palette
+        end
         if active_palette then env.palette = active_palette end
 
         -- Only engage eco mode if a node is ACTIVELY moving, not just clicked.

@@ -572,9 +572,10 @@ local function LoadThemeIntoBuffer(algo_id, theme_name, env)
     
     -- MEMORY FETCH: If no physical file exists, pull the extracted memory fallback from NodeUI
     UI.wb_grid_cols = 12; UI.wb_grid_rows = 6; UI.theme_seed_hex = 0x00A5FFFF; UI.selected_comp_ids = {}
-    if env and env.NodeUI and env.NodeUI.SCHEMAS[algo_id] then
+    local fallback_schema = env and env.NodeUI and env.NodeUI.GetSchema(algo_id)
+    if fallback_schema and fallback_schema.components then
         -- Deep Copy to prevent altering the global fallback registry
-        UI.wb_schema_buffer = UI.DeepCopy(env.NodeUI.SCHEMAS[algo_id])
+        UI.wb_schema_buffer = UI.DeepCopy(fallback_schema.components)
     else
         UI.wb_schema_buffer = {}
     end
