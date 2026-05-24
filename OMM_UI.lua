@@ -3,6 +3,7 @@
 -- Protocol Zero: Seatbelt Drag Logic, Safe Stack Pops & Premium Toolbox
 -- ==============================================================================
 local UI = { 
+    filter_layer = nil, locked_layer = nil, layer_toolbar_collapsed = false,
     toggle_anim_states={}, active_edit_id=nil, edit_buffer="", selected_comp_ids={}, 
     knob_histories={}, physics_states={}, dropdown_states={}, hover_states={},
     snap_enabled=true, theme_seed_hex=0x00A5FFFF, edit_mode=true,
@@ -18,11 +19,11 @@ local UI = {
     palette_open = false, palette_height = 250, drag_col_idx = nil,
     notifications = {}, notif_counter = 0, palette_search = "",
     active_palette = { 
-        { id=1, hex = 0x00E5FFFF, token = "Primary" }, 
-        { id=2, hex = 0xFF6B35FF, token = "Accent" },
-        { id=3, hex = 0xF5F5F7FF, token = "Text" },
-        { id=4, hex = 0x8E8E93FF, token = "Neutral" },
-        { id=5, hex = 0x1C1C1EFF, token = "Base" }
+        { id=1, hex = 0x00E5FFFF, token = "Primary", gen_index=0, hue_drift=0.0 }, 
+        { id=2, hex = 0xFF6B35FF, token = "Accent", gen_index=0, hue_drift=0.0 },
+        { id=3, hex = 0xF5F5F7FF, token = "Text", gen_index=0, hue_drift=0.0 },
+        { id=4, hex = 0x8E8E93FF, token = "Neutral", gen_index=0, hue_drift=0.0 },
+        { id=5, hex = 0x1C1C1EFF, token = "Base", gen_index=0, hue_drift=0.0 }
     }
 }
 
@@ -132,6 +133,25 @@ function UI.Safe_InvisibleButton(ctx, id, w, h)
     -- THE HOVER GUARD: If ANY component is hovered or actively being dragged, lock the chassis.
     if reaper.ImGui_IsItemHovered(ctx) or reaper.ImGui_IsItemActive(ctx) then
         UI.hovered_component = id
+    end
+    
+    -- THE SELECTION BRIDGE: Interacting in Play Mode selects it for the Property Pane
+    if not UI.edit_mode and ok and select(2, pcall(reaper.ImGui_IsItemClicked, ctx)) then
+        local base_id = tostring(id)
+        base_id = base_id:gsub("_knob$", "")
+        base_id = base_id:gsub("_fader$", "")
+        base_id = base_id:gsub("_drop$", "")
+        base_id = base_id:gsub("_seg_%d+$", "")
+        
+        local is_comp = false
+        if UI.wb_schema_buffer then
+            for _, comp in ipairs(UI.wb_schema_buffer) do
+                if comp.id == base_id then is_comp = true; break end
+            end
+        end
+        if is_comp then
+            UI.selected_comp_ids = {base_id}
+        end
     end
     
     return ok
@@ -252,14 +272,14 @@ function UI.DrawComponent_AuraKnob(ctx, dl, comp, env, state, is_disabled, val_n
     local is_active = reaper.ImGui_IsItemActive(ctx)
     
     -- Double Click Bipolar Toggle
-    if hov and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
+    if UI.edit_mode and hov and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
         comp.is_bipolar = not comp.is_bipolar
         changed = true; p_state.flash = 1.0
     end
 
     if is_active and not is_disabled then
-        local _, dx, dy = reaper.ImGui_GetMouseDelta(ctx)
-        if dy and dy ~= 0 then
+        local ok, dx, dy = pcall(reaper.ImGui_GetMouseDelta, ctx)
+        if ok and tonumber(dy) and dy ~= 0 then
             local mx, my = reaper.ImGui_GetMousePos(ctx)
             local dist = math.sqrt((mx - cx)^2 + (my - cy)^2)
             local ok_mods, mods = pcall(reaper.ImGui_GetKeyMods, ctx)
@@ -267,10 +287,10 @@ function UI.DrawComponent_AuraKnob(ctx, dl, comp, env, state, is_disabled, val_n
             local speed = shift and 0.0005 or 0.003
             
             -- If grabbed outside the inner radius, adjust Depth instead of Value!
-            if dist > (rad * 0.6) and has_depth then
+            if dist > (rad * 0.6) and has_depth and UI.edit_mode then
                 comp.routes[1].depth = math.max(-1.0, math.min(1.0, depth_val - (dy * speed * 2.0)))
                 changed = true; p_state.flash = 1.0
-            else
+            elseif not UI.edit_mode then
                 new_norm = math.max(0.0, math.min(1.0, val_norm - (dy * speed)))
                 changed = true
             end
@@ -385,7 +405,7 @@ function UI.DrawComponent_TogglePill(ctx, dl, comp, env, state, is_disabled, val
     local is_active = val_norm > 0.5
     reaper.ImGui_SetCursorScreenPos(ctx, x, y); UI.Safe_InvisibleButton(ctx, comp.id, w, h)
     local changed, new_norm = false, val_norm
-    if reaper.ImGui_IsItemClicked(ctx) then new_norm = is_active and 0.0 or 1.0; changed = true end
+    if not UI.edit_mode and reaper.ImGui_IsItemClicked(ctx) then new_norm = is_active and 0.0 or 1.0; changed = true end
     p_state.ghost_norm = new_norm
     local c_bg = is_active and 0x00E5FFFF or 0x2A2A33FF
     reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x+w, y+h, c_bg & 0xFFFFFF00 | math.floor(0xFF * env.act_a), r)
@@ -405,7 +425,7 @@ function UI.DrawComponent_ToggleLever(ctx, dl, comp, env, state, is_disabled, va
     local is_active = val_norm > 0.5
     reaper.ImGui_SetCursorScreenPos(ctx, x, y); UI.Safe_InvisibleButton(ctx, comp.id, w, h)
     local changed, new_norm = false, val_norm
-    if reaper.ImGui_IsItemClicked(ctx) then new_norm = is_active and 0.0 or 1.0; changed = true end
+    if not UI.edit_mode and reaper.ImGui_IsItemClicked(ctx) then new_norm = is_active and 0.0 or 1.0; changed = true end
     p_state.ghost_norm = new_norm
     local a = math.floor(0xFF * env.act_a)
     reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x+w, y+h, 0x1A1A1CFF & 0xFFFFFF00 | a, 4.0)
@@ -498,6 +518,13 @@ function UI.CompileFaceplate(module, theme_name)
     f:write(string.format("  grid_cols = %d,\n", module.grid_cols or 12))
     f:write(string.format("  grid_rows = %d,\n", module.grid_rows or 6))
     f:write(string.format("  seed_hex = %d,\n", module.seed_hex or 0x00A5FFFF))
+    if UI.active_palette then
+        f:write("  active_palette = {\n")
+        for _, p in ipairs(UI.active_palette) do
+            f:write(string.format("    { id=%d, hex=%d, token='%s', gen_index=%d, hue_drift=%f },\n", p.id, p.hex, p.token, p.gen_index or 0, p.hue_drift or 0.0))
+        end
+        f:write("  },\n")
+    end
     f:write("  components = {\n")
     for _, c in ipairs(module.components) do
         f:write("    {\n")
@@ -555,6 +582,17 @@ local function LoadThemeIntoBuffer(algo_id, theme_name, env)
             UI.wb_grid_cols = data.grid_cols or 12
             UI.wb_grid_rows = data.grid_rows or 6
             UI.theme_seed_hex = data.seed_hex or 0x00A5FFFF
+            if data.active_palette then
+                UI.active_palette = UI.DeepCopy(data.active_palette)
+            else
+                UI.active_palette = { 
+                    { id=1, hex = 0x00E5FFFF, token = "Primary", gen_index=0, hue_drift=0.0 }, 
+                    { id=2, hex = 0xFF6B35FF, token = "Accent", gen_index=0, hue_drift=0.0 },
+                    { id=3, hex = 0xF5F5F7FF, token = "Text", gen_index=0, hue_drift=0.0 },
+                    { id=4, hex = 0x8E8E93FF, token = "Neutral", gen_index=0, hue_drift=0.0 },
+                    { id=5, hex = 0x1C1C1EFF, token = "Base", gen_index=0, hue_drift=0.0 }
+                }
+            end
             UI.wb_schema_buffer = data.components or {}
             for _, comp in ipairs(UI.wb_schema_buffer) do
                 if comp.param_key and not comp.routes then
@@ -581,6 +619,161 @@ local function LoadThemeIntoBuffer(algo_id, theme_name, env)
     end
     
     return false
+end
+
+function UI.DrawLayerToolbar(ctx, draw_list, canvas_x, canvas_y, canvas_w, canvas_h)
+    -- 1. Self-Contained Physics Timer
+    local now = reaper.time_precise()
+    UI.layer_last_time = UI.layer_last_time or now
+    local dt = math.min(0.05, now - UI.layer_last_time)
+    UI.layer_last_time = now
+
+    -- 2. Dimensions & Grid
+    local pad = 40
+    local bar_w = 40 
+    local cell_h = 32
+    
+    -- 3. Spring State Initialization
+    UI.layer_anim_h = UI.layer_anim_h or cell_h
+    UI.layer_anim_a = UI.layer_anim_a or (UI.layer_toolbar_collapsed and 0.0 or 1.0)
+    UI.layer_anim_t = UI.layer_anim_t or (UI.layer_toolbar_collapsed and 0.0 or 1.0)
+    
+    local target_h = UI.layer_toolbar_collapsed and cell_h or (cell_h * 8)
+    local target_a = UI.layer_toolbar_collapsed and 0.0 or 1.0
+    local target_t = UI.layer_toolbar_collapsed and 0.0 or 1.0
+    
+    -- 4. The Spring Engine (Exponential Decay)
+    local speed = 18.0
+    UI.layer_anim_h = UI.layer_anim_h + (target_h - UI.layer_anim_h) * math.min(1.0, dt * speed)
+    UI.layer_anim_a = UI.layer_anim_a + (target_a - UI.layer_anim_a) * math.min(1.0, dt * (speed * 1.5))
+    UI.layer_anim_t = UI.layer_anim_t + (target_t - UI.layer_anim_t) * math.min(1.0, dt * speed)
+    
+    -- 5. Dynamic Centering Anchor
+    local bar_h = UI.layer_anim_h
+    local x = canvas_x + canvas_w - bar_w - pad
+    local y = canvas_y + (canvas_h - bar_h) / 2 
+    
+    -- Solid Dark Theme
+    pcall(reaper.ImGui_DrawList_AddRectFilled, draw_list, x, y, x + bar_w, y + bar_h, 0x111111CC, 12.0)
+    pcall(reaper.ImGui_DrawList_AddRect, draw_list, x, y, x + bar_w, y + bar_h, 0xFFFFFF22, 12.0)
+
+    pcall(reaper.ImGui_SetCursorScreenPos, ctx, x, y)
+    
+    -- CRITICAL FIX: Unconditional Begin/End wrapper to protect ImGui Stack
+    local is_vis = select(2, pcall(reaper.ImGui_BeginChild, ctx, "layer_stack", bar_w, bar_h, 0, reaper.ImGui_WindowFlags_NoBackground() | reaper.ImGui_WindowFlags_NoScrollbar()))
+    if is_vis then
+        -- ==========================================
+        -- CELL 0: THE MECHANICAL HINGE
+        -- ==========================================
+        local cursor_y = y
+        pcall(reaper.ImGui_SetCursorScreenPos, ctx, x, cursor_y)
+        pcall(reaper.ImGui_InvisibleButton, ctx, "btn_lyr_collapse", bar_w, cell_h)
+        local hinge_hov = select(2, pcall(reaper.ImGui_IsItemHovered, ctx))
+        
+        if hinge_hov then 
+            pcall(reaper.ImGui_DrawList_AddRectFilled, draw_list, x, cursor_y, x + bar_w, cursor_y + cell_h, 0xFFFFFF11, 12.0, reaper.ImGui_DrawFlags_RoundCornersTop())
+            if select(2, pcall(reaper.ImGui_IsMouseClicked, ctx, 0)) then
+                UI.layer_toolbar_collapsed = not UI.layer_toolbar_collapsed
+            end
+        end
+        
+        -- Crossfade Icon Morphing
+        local cx, cy = x + (bar_w/2), cursor_y + (cell_h/2)
+        local icon_base = hinge_hov and 0xFFFFFFFF or 0x888888FF
+        local alpha_hamb = math.floor((1.0 - UI.layer_anim_t) * 255)
+        local alpha_arrow = math.floor(UI.layer_anim_t * 255)
+        
+        if alpha_hamb > 0 then
+            local col_h = (icon_base & 0xFFFFFF00) | alpha_hamb
+            pcall(reaper.ImGui_DrawList_AddLine, draw_list, cx-6, cy-4, cx+6, cy-4, col_h, 2.0)
+            pcall(reaper.ImGui_DrawList_AddLine, draw_list, cx-6, cy,   cx+6, cy,   col_h, 2.0)
+            pcall(reaper.ImGui_DrawList_AddLine, draw_list, cx-6, cy+4, cx+6, cy+4, col_h, 2.0)
+        end
+        if alpha_arrow > 0 then
+            local col_a = (icon_base & 0xFFFFFF00) | alpha_arrow
+            pcall(reaper.ImGui_DrawList_AddLine, draw_list, cx-2, cy-6, cx-2, cy+6, col_a, 2.0)
+            pcall(reaper.ImGui_DrawList_AddTriangleFilled, draw_list, cx+1, cy-5, cx+1, cy+5, cx+6, cy, col_a)
+        end
+        
+        -- ==========================================
+        -- THE LAYER CELLS
+        -- ==========================================
+        if UI.layer_anim_a > 0.01 then
+            -- The Separator Line
+            local sep_alpha = math.floor(UI.layer_anim_a * 34)
+            pcall(reaper.ImGui_DrawList_AddLine, draw_list, x, cursor_y + cell_h, x + bar_w, cursor_y + cell_h, 0xFFFFFF00 | sep_alpha, 1.0)
+            
+            -- Push Clip Rect so closing animation doesn't bleed out of the box
+            pcall(reaper.ImGui_DrawList_PushClipRect, draw_list, x, y, x + bar_w, y + bar_h, true)
+            
+            local layers = {"ALL", 5, 4, 3, 2, 1, 0}
+            local anim_a_byte = math.floor(UI.layer_anim_a * 255)
+            local hover_a_byte = math.floor(UI.layer_anim_a * 17)
+            
+            for _, lyr in ipairs(layers) do
+                cursor_y = cursor_y + cell_h
+                local label = tostring(lyr)
+                
+                pcall(reaper.ImGui_SetCursorScreenPos, ctx, x, cursor_y)
+                pcall(reaper.ImGui_InvisibleButton, ctx, "btn_lyr_"..label, bar_w, cell_h)
+                pcall(reaper.ImGui_SetItemAllowOverlap, ctx)
+                
+                local is_hov = select(2, pcall(reaper.ImGui_IsItemHovered, ctx))
+                
+                -- Input Engine (Guard: Only click if fully open)
+                if is_hov and UI.layer_anim_a > 0.9 then
+                    if select(2, pcall(reaper.ImGui_IsMouseClicked, ctx, 0)) then 
+                        if lyr == "ALL" then UI.filter_layer, UI.locked_layer = nil, nil
+                        else UI.filter_layer, UI.locked_layer = lyr, nil end
+                    elseif select(2, pcall(reaper.ImGui_IsMouseClicked, ctx, 1)) then 
+                        if lyr == "ALL" then UI.filter_layer, UI.locked_layer = nil, nil
+                        else UI.locked_layer, UI.filter_layer = lyr, nil end
+                    end
+                end
+                
+                local state = 0
+                if lyr == "ALL" then
+                    if UI.filter_layer == nil and UI.locked_layer == nil then state = 1 end
+                else
+                    if UI.filter_layer == lyr then state = 1 
+                    elseif UI.locked_layer == lyr then state = 2 end
+                end
+                
+                -- Optical Centering & Box Geometry
+                local pad_x, pad_y = 4, 5
+                local bx1, by1 = x + pad_x, cursor_y + pad_y
+                local bx2, by2 = x + bar_w - pad_x, cursor_y + cell_h - pad_y
+                local text_col = 0x88888800 | anim_a_byte
+                local cyan_solid = 0x00E5FF00 | anim_a_byte
+                
+                if state == 1 then
+                    pcall(reaper.ImGui_DrawList_AddRectFilled, draw_list, bx1, by1, bx2, by2, cyan_solid, 4.0)
+                    text_col = 0x11111100 | anim_a_byte
+                elseif state == 2 then
+                    pcall(reaper.ImGui_DrawList_AddRect, draw_list, bx1, by1, bx2, by2, cyan_solid, 4.0, 0, 2.0)
+                    text_col = cyan_solid
+                else
+                    if is_hov and UI.layer_anim_a > 0.9 then 
+                        pcall(reaper.ImGui_DrawList_AddRectFilled, draw_list, bx1, by1, bx2, by2, 0xFFFFFF00 | hover_a_byte, 4.0) 
+                    end
+                end
+                
+                -- The Nudge Fix
+                local ok, tw, th = pcall(reaper.ImGui_CalcTextSize, ctx, label)
+                tw = tonumber(tw) or 10; th = tonumber(th) or 14
+                local font_y_nudge = 0
+                local tx = x + (bar_w / 2) - (tw / 2)
+                local ty = cursor_y + (cell_h / 2) - (th / 2) + font_y_nudge
+                
+                pcall(reaper.ImGui_DrawList_AddText, draw_list, tx, ty, text_col, label)
+            end
+            
+            pcall(reaper.ImGui_DrawList_PopClipRect, draw_list)
+        end
+    end
+    
+    -- CRITICAL FIX: Unconditional EndChild prevents stack corruption!
+    pcall(reaper.ImGui_EndChild, ctx)
 end
 
 -- ==========================================
@@ -637,47 +830,84 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local ok_avail, drag_w, avail_main_h = pcall(reaper.ImGui_GetContentRegionAvail, ctx)
         drag_w, avail_main_h = tonumber(drag_w) or 0, tonumber(avail_main_h) or 0
         
-        UI.Safe_InvisibleButton(ctx, "top_drag_bar", math.max(1.0, drag_w), 16)
-        if select(2, pcall(reaper.ImGui_IsItemHovered, ctx)) then 
-            pcall(reaper.ImGui_DrawList_AddRectFilled, dl_main, top_wx, top_wy, top_wx + drag_w, top_wy + 16, 0xFFFFFF0A, 4.0) 
-        end
-        if select(2, pcall(reaper.ImGui_IsItemActive, ctx)) and select(2, pcall(reaper.ImGui_IsMouseDragging, ctx, 0)) then
-            local ok, dx, dy = pcall(reaper.ImGui_GetMouseDelta, ctx)
-            if ok and tonumber(dx) and tonumber(dy) and (dx ~= 0 or dy ~= 0) then
-                local wok, wx, wy = pcall(reaper.ImGui_GetWindowPos, ctx)
-                if wok and tonumber(wx) and tonumber(wy) then
-                    UI.drag_mem.next_win_x = wx + dx
-                    UI.drag_mem.next_win_y = wy + dy
+        -- ==========================================================
+        -- 1. THE 3-ZONE HEADER ARCHITECTURE (Absolute 26px)
+        -- ==========================================================
+        local header_h = 26
+        local btn_w = 80
+        local btn_h = 20
+        local total_btn_w = btn_w * 2
+        local win_w = select(2, pcall(reaper.ImGui_GetWindowWidth, ctx)) or 400
+        
+        local ok_pos, win_x, win_y = pcall(reaper.ImGui_GetWindowPos, ctx)
+        win_x = ok_pos and win_x or 0; win_y = ok_pos and win_y or 0
+        
+        local left_drag_w = (win_w - total_btn_w) / 2
+        local right_drag_w = win_w - left_drag_w - total_btn_w
+
+        -- Helper Engine: Keeps the hover/drag logic clean for both sides
+        local function HandleHeaderDrag(w, h)
+            if select(2, pcall(reaper.ImGui_IsItemHovered, ctx)) then 
+                local ok_min, ix, iy = pcall(reaper.ImGui_GetItemRectMin, ctx)
+                if ok_min then pcall(reaper.ImGui_DrawList_AddRectFilled, dl_main, ix, iy, ix + w, iy + h, 0xFFFFFF0A, 4.0) end
+            end
+            if select(2, pcall(reaper.ImGui_IsItemActive, ctx)) and select(2, pcall(reaper.ImGui_IsMouseDragging, ctx, 0)) then
+                local ok_delta, dx, dy = pcall(reaper.ImGui_GetMouseDelta, ctx)
+                if ok_delta and (dx ~= 0 or dy ~= 0) then
+                    UI.drag_mem.next_win_x = win_x + dx
+                    UI.drag_mem.next_win_y = win_y + dy
                 end
             end
         end
-        -- ==========================================================
-        -- THE FLOATING DESIGN/PLAY TOGGLE (Top Center)
-        -- ==========================================================
-        local win_w = reaper.ImGui_GetWindowWidth(ctx)
-        -- Lowered by 15px (to Y=25) to clear ImGui's invisible window-drag bar
-        pcall(reaper.ImGui_SetCursorPos, ctx, (win_w - 160) / 2, 25) 
+
+        -- ZONE 1: Left Drag (Forces Cursor to 0,0 to override ImGui padding)
+        pcall(reaper.ImGui_SetCursorPos, ctx, 0, 0)
+        UI.Safe_InvisibleButton(ctx, "drag_left", math.max(1, left_drag_w), header_h)
+        HandleHeaderDrag(left_drag_w, header_h)
         
+        pcall(reaper.ImGui_SameLine, ctx, 0, 0)
+        
+        -- ZONE 2: Design & Play (Math: 26 - 20 / 2 = 3px vertical padding)
+        pcall(reaper.ImGui_SetCursorPosY, ctx, (header_h - btn_h) / 2)
         local active_col = UI.edit_mode and 0xFF6B35FF or 0x00E5FFFF
         pcall(reaper.ImGui_PushStyleVar, ctx, reaper.ImGui_StyleVar_ItemSpacing(), 0, 0)
         
-        -- DESIGN MODE (■)
+        -- DESIGN (■)
         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Button(), UI.edit_mode and active_col or 0x2A2A2CFF)
         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Text(), UI.edit_mode and 0x1C1C1EFF or 0x888888FF)
-        if select(2, pcall(reaper.ImGui_Button, ctx, "■ DESIGN", 80, 24)) then UI.edit_mode = true end
+        if select(2, pcall(reaper.ImGui_Button, ctx, "■ DESIGN", btn_w, btn_h)) then 
+            if not UI.edit_mode and UI.wb_schema_buffer then
+                -- SNAP-BACK ENGINE: Reset all components to their Default Value
+                for _, comp in ipairs(UI.wb_schema_buffer) do
+                    if comp.default_val then comp.val = comp.default_val end
+                end
+            end
+            UI.edit_mode = true 
+        end
         pcall(reaper.ImGui_PopStyleColor, ctx, 2)
         
-        pcall(reaper.ImGui_SameLine, ctx)
+        pcall(reaper.ImGui_SameLine, ctx, 0, 0)
+        pcall(reaper.ImGui_SetCursorPosY, ctx, (header_h - btn_h) / 2)
         
-        -- PLAY MODE (▶)
+        -- PLAY (▶)
         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Button(), not UI.edit_mode and active_col or 0x2A2A2CFF)
         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Text(), not UI.edit_mode and 0x1C1C1EFF or 0x888888FF)
-        if select(2, pcall(reaper.ImGui_Button, ctx, "▶ PLAY", 80, 24)) then UI.edit_mode = false end
+        if select(2, pcall(reaper.ImGui_Button, ctx, "▶ PLAY", btn_w, btn_h)) then UI.edit_mode = false end
         pcall(reaper.ImGui_PopStyleColor, ctx, 2)
         
         pcall(reaper.ImGui_PopStyleVar, ctx, 1)
+        
+        pcall(reaper.ImGui_SameLine, ctx, 0, 0)
+        
+        -- ZONE 3: Right Drag
+        pcall(reaper.ImGui_SetCursorPosY, ctx, 0)
+        UI.Safe_InvisibleButton(ctx, "drag_right", math.max(1, right_drag_w), header_h)
+        HandleHeaderDrag(right_drag_w, header_h)
+        
         -- ==========================================================
-        reaper.ImGui_Spacing(ctx)
+        -- RESTORE CONTENT CURSOR: Force everything below to start at Y = 26
+        -- ==========================================================
+        pcall(reaper.ImGui_SetCursorPosY, ctx, header_h)
 
         if not UI.wb_targets then
             UI.wb_targets = {
@@ -715,7 +945,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
         -- ==========================================
         -- PANE 1: BLUEPRINTS & TOOLBOX (GOLDEN RATIO 240px)
         -- ==========================================
-        reaper.ImGui_BeginChild(ctx, "left_pane", 240, 0, 0, 0)
+        reaper.ImGui_BeginChild(ctx, "omm_left_pane", 240, 0, 0, 0)
         local dl_left = reaper.ImGui_GetWindowDrawList(ctx)
         
         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 12.0)
@@ -735,7 +965,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
         UI.open_blueprints = open_bp
         
         if t_bp > 0.01 then
-            reaper.ImGui_BeginChild(ctx, "bp_list", 240, 140 * t_bp, 0, reaper.ImGui_WindowFlags_NoScrollbar())
+            reaper.ImGui_BeginChild(ctx, "omm_bp_list", 240, 140 * t_bp, 0, reaper.ImGui_WindowFlags_NoScrollbar())
             reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_bp)
             for i, tgt in ipairs(UI.wb_targets) do
                 if reaper.ImGui_Selectable(ctx, tgt.name, UI.wb_target_idx == i) then
@@ -757,7 +987,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local clk_tk, open_tk, t_tk = UI.DrawAnimatedDisclosure(ctx, dl_left, "cat_knobs", "CONTROLS", UI.open_cat_knobs, env.app_dt, 240)
         UI.open_cat_knobs = open_tk
         if t_tk > 0.01 and (UI.search_filter == "" or string.find("auraknob fader", UI.search_filter, 1, true)) then
-            reaper.ImGui_BeginChild(ctx, "tk_list", 240, 140 * t_tk, 0, reaper.ImGui_WindowFlags_NoScrollbar())
+            reaper.ImGui_BeginChild(ctx, "omm_tk_list", 240, 140 * t_tk, 0, reaper.ImGui_WindowFlags_NoScrollbar())
             reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_tk)
             
             -- AuraKnob
@@ -791,7 +1021,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local clk_tm, open_tm, t_tm = UI.DrawAnimatedDisclosure(ctx, dl_left, "cat_meters", "METERS & SLIDERS", UI.open_cat_meters, env.app_dt, 240)
         UI.open_cat_meters = open_tm
         if t_tm > 0.01 and (UI.search_filter == "" or string.find("peakmeter vumeter inlinedrag", UI.search_filter, 1, true)) then
-            reaper.ImGui_BeginChild(ctx, "tm_list", 240, 210 * t_tm, 0, reaper.ImGui_WindowFlags_NoScrollbar())
+            reaper.ImGui_BeginChild(ctx, "omm_tm_list", 240, 210 * t_tm, 0, reaper.ImGui_WindowFlags_NoScrollbar())
             reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_tm)
             
             local bx2, by2 = reaper.ImGui_GetCursorScreenPos(ctx)
@@ -826,7 +1056,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local clk_sw, open_sw, t_sw = UI.DrawAnimatedDisclosure(ctx, dl_left, "cat_switches", "SWITCHES", UI.open_cat_switches, env.app_dt, 240)
         UI.open_cat_switches = open_sw
         if t_sw > 0.01 and (UI.search_filter == "" or string.find("togglepill togglelever dropdown radiostrip", UI.search_filter, 1, true)) then
-            reaper.ImGui_BeginChild(ctx, "sw_list", 240, 280 * t_sw, 0, reaper.ImGui_WindowFlags_NoScrollbar())
+            reaper.ImGui_BeginChild(ctx, "omm_sw_list", 240, 280 * t_sw, 0, reaper.ImGui_WindowFlags_NoScrollbar())
             reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_sw)
             
             local bx5, by5 = reaper.ImGui_GetCursorScreenPos(ctx)
@@ -878,51 +1108,50 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local clk_dp, open_dp, t_dp = UI.DrawAnimatedDisclosure(ctx, dl_left, "cat_displays", "DISPLAYS", UI.open_cat_displays, env.app_dt, 240)
         UI.open_cat_displays = open_dp
         if t_dp > 0.01 and (UI.search_filter == "" or string.find("vfdscreen", UI.search_filter, 1, true)) then
-            reaper.ImGui_BeginChild(ctx, "dp_list", 240, 70 * t_dp, 0, reaper.ImGui_WindowFlags_NoScrollbar())
             reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_dp)
-            
-            local bxv, byv = reaper.ImGui_GetCursorScreenPos(ctx)
-            reaper.ImGui_InvisibleButton(ctx, "drag_VFDScreen", 220, 60)
-            reaper.ImGui_DrawList_AddRectFilled(dl_left, bxv, byv, bxv+220, byv+60, 0x2A2A2AFF, 12.0)
-            reaper.ImGui_DrawList_AddRectFilled(dl_left, bxv+10, byv+12, bxv+48, byv+48, 0x0A0A0AFF, 4.0)
-            reaper.ImGui_DrawList_AddRect(dl_left, bxv+10, byv+12, bxv+48, byv+48, 0x1A1A1FFF, 4.0, 0, 1.0)
-            UI.DrawStandardText(dl_left, bxv + 16, byv + 22, "8.8", 0x00E5FFFF, 1.0)
-            UI.DrawStandardText(dl_left, bxv + 60, byv + 16, "VFD Screen", 0xFFFFFFFF, 1.0)
-            UI.DrawStandardText(dl_left, bxv + 60, byv + 33, "Vacuum fluorescent", 0x888888FF, 1.0)
-            if reaper.ImGui_BeginDragDropSource(ctx) then reaper.ImGui_SetDragDropPayload(ctx, 'NEW_COMP', "VFDScreen"); reaper.ImGui_Text(ctx, "VFDScreen"); reaper.ImGui_EndDragDropSource(ctx) end
-            
-            reaper.ImGui_PopStyleVar(ctx, 1); reaper.ImGui_EndChild(ctx)
+            local is_visible = reaper.ImGui_BeginChild(ctx, "omm_disp_block_v2", 240, 70 * t_dp, 0, reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse())
+            if is_visible then
+                local bxv, byv = reaper.ImGui_GetCursorScreenPos(ctx)
+                reaper.ImGui_InvisibleButton(ctx, "drag_VFDScreen", 220, 60)
+                reaper.ImGui_DrawList_AddRectFilled(dl_left, bxv, byv, bxv+220, byv+60, 0x2A2A2AFF, 12.0)
+                reaper.ImGui_DrawList_AddRectFilled(dl_left, bxv+10, byv+12, bxv+48, byv+48, 0x0A0A0AFF, 4.0)
+                reaper.ImGui_DrawList_AddRect(dl_left, bxv+10, byv+12, bxv+48, byv+48, 0x1A1A1FFF, 4.0, 0, 1.0)
+                UI.DrawStandardText(dl_left, bxv + 16, byv + 22, "8.8", 0x00E5FFFF, 1.0)
+                UI.DrawStandardText(dl_left, bxv + 60, byv + 16, "VFD Screen", 0xFFFFFFFF, 1.0)
+                UI.DrawStandardText(dl_left, bxv + 60, byv + 33, "Vacuum fluorescent", 0x888888FF, 1.0)
+                if reaper.ImGui_BeginDragDropSource(ctx) then reaper.ImGui_SetDragDropPayload(ctx, 'NEW_COMP', "VFDScreen"); reaper.ImGui_Text(ctx, "VFDScreen"); reaper.ImGui_EndDragDropSource(ctx) end
+            end
+            reaper.ImGui_EndChild(ctx)
+            reaper.ImGui_PopStyleVar(ctx, 1)
         end
 
         -- CATEGORY: PANELS & DECOR
         local clk_pn, open_pn, t_pn = UI.DrawAnimatedDisclosure(ctx, dl_left, "cat_panels", "PANELS", UI.open_cat_panels, env.app_dt, 240)
         UI.open_cat_panels = open_pn
         if t_pn > 0.01 and (UI.search_filter == "" or string.find("backpanel screwdecal", UI.search_filter, 1, true)) then
-            reaper.ImGui_BeginChild(ctx, "pn_list", 240, 140 * t_pn, 0, reaper.ImGui_WindowFlags_NoScrollbar())
             reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_pn)
-            
-            local bxp, byp = reaper.ImGui_GetCursorScreenPos(ctx)
-            reaper.ImGui_InvisibleButton(ctx, "drag_BackPanel", 220, 60)
-            reaper.ImGui_DrawList_AddRectFilled(dl_left, bxp, byp, bxp+220, byp+60, 0x2A2A2AFF, 12.0)
-            reaper.ImGui_DrawList_AddRectFilledMultiColor(dl_left, bxp+10, byp+12, bxp+48, byp+48, 0xE5E5EAFF, 0xE5E5EAFF, 0xB5B5BAFF, 0xB5B5BAFF)
-            reaper.ImGui_DrawList_AddLine(dl_left, bxp+10, byp+12, bxp+48, byp+12, 0xFFFFFF33, 2.0)
-            UI.DrawStandardText(dl_left, bxp + 60, byp + 16, "BackPanel", 0xFFFFFFFF, 1.0)
-            UI.DrawStandardText(dl_left, bxp + 60, byp + 33, "Gradient chassis", 0x888888FF, 1.0)
-            if reaper.ImGui_BeginDragDropSource(ctx) then reaper.ImGui_SetDragDropPayload(ctx, 'NEW_COMP', "BackPanel"); reaper.ImGui_Text(ctx, "BackPanel"); reaper.ImGui_EndDragDropSource(ctx) end
-
-            reaper.ImGui_Dummy(ctx, 10, 5)
-            local bxs, bys = reaper.ImGui_GetCursorScreenPos(ctx)
-            reaper.ImGui_InvisibleButton(ctx, "drag_ScrewDecal", 220, 60)
-            reaper.ImGui_DrawList_AddRectFilled(dl_left, bxs, bys, bxs+220, bys+60, 0x2A2A2AFF, 12.0)
-            reaper.ImGui_DrawList_AddCircleFilled(dl_left, bxs+25, bys+30, 7, 0x0A0A0AFF)
-            reaper.ImGui_DrawList_AddCircleFilled(dl_left, bxs+25, bys+30, 5, 0x888888FF)
-            reaper.ImGui_DrawList_AddLine(dl_left, bxs+22, bys+30, bxs+28, bys+30, 0x555555FF, 1.5)
-            reaper.ImGui_DrawList_AddLine(dl_left, bxs+25, bys+27, bxs+25, bys+33, 0x555555FF, 1.5)
-            UI.DrawStandardText(dl_left, bxs + 60, bys + 16, "ScrewDecal", 0xFFFFFFFF, 1.0)
-            UI.DrawStandardText(dl_left, bxs + 60, bys + 33, "Decorative hardware", 0x888888FF, 1.0)
-            if reaper.ImGui_BeginDragDropSource(ctx) then reaper.ImGui_SetDragDropPayload(ctx, 'NEW_COMP', "ScrewDecal"); reaper.ImGui_Text(ctx, "ScrewDecal"); reaper.ImGui_EndDragDropSource(ctx) end
-            
-            reaper.ImGui_PopStyleVar(ctx, 1); reaper.ImGui_EndChild(ctx)
+            local is_visible = reaper.ImGui_BeginChild(ctx, "omm_pnl_block_v2", 240, 140 * t_pn, 0, reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse())
+            if is_visible then
+                local bxp, byp = reaper.ImGui_GetCursorScreenPos(ctx)
+                reaper.ImGui_InvisibleButton(ctx, "drag_BackPanel", 220, 60)
+                reaper.ImGui_DrawList_AddRectFilled(dl_left, bxp, byp, bxp+220, byp+60, 0x2A2A2AFF, 12.0)
+                reaper.ImGui_DrawList_AddRectFilledMultiColor(dl_left, bxp+10, byp+12, bxp+48, byp+48, 0xE5E5EAFF, 0xE5E5EAFF, 0xB5B5BAFF, 0xB5B5BAFF)
+                reaper.ImGui_DrawList_AddLine(dl_left, bxp+10, byp+12, bxp+48, byp+12, 0xFFFFFF33, 2.0)
+                UI.DrawStandardText(dl_left, bxp + 60, byp + 16, "BackPanel", 0xFFFFFFFF, 1.0)
+                UI.DrawStandardText(dl_left, bxp + 60, byp + 33, "Gradient chassis", 0x888888FF, 1.0)
+                if reaper.ImGui_BeginDragDropSource(ctx) then reaper.ImGui_SetDragDropPayload(ctx, 'NEW_COMP', "BackPanel"); reaper.ImGui_Text(ctx, "BackPanel"); reaper.ImGui_EndDragDropSource(ctx) end
+                
+                reaper.ImGui_Dummy(ctx, 10, 5)
+                local bxs, bys = reaper.ImGui_GetCursorScreenPos(ctx)
+                reaper.ImGui_InvisibleButton(ctx, "drag_ScrewDecal", 220, 60)
+                reaper.ImGui_DrawList_AddRectFilled(dl_left, bxs, bys, bxs+220, bys+60, 0x2A2A2AFF, 12.0)
+                reaper.ImGui_DrawList_AddCircleFilled(dl_left, bxs+25, bys+30, 7, 0x0A0A0AFF)
+                reaper.ImGui_DrawList_AddCircleFilled(dl_left, bxs+25, bys+30, 5, 0x888888FF)
+                UI.DrawStandardText(dl_left, bxs + 60, bys + 16, "ScrewDecal", 0xFFFFFFFF, 1.0)
+                if reaper.ImGui_BeginDragDropSource(ctx) then reaper.ImGui_SetDragDropPayload(ctx, 'NEW_COMP', "ScrewDecal"); reaper.ImGui_Text(ctx, "ScrewDecal"); reaper.ImGui_EndDragDropSource(ctx) end
+            end
+            reaper.ImGui_EndChild(ctx)
+            reaper.ImGui_PopStyleVar(ctx, 1)
         end
 
         reaper.ImGui_EndChild(ctx)
@@ -938,204 +1167,232 @@ function UI.DrawWorkbenchWindow(ctx, env)
 
         reaper.ImGui_BeginGroup(ctx) -- PROTECTS PANE 3 FROM ALIGNMENT BUGS
 
-        if UI.palette_open then
+        -- KINEMATIC PALETTE SPRING (Smooth Roll-Down/Up)
+        UI.pal_anim_t = UI.pal_anim_t or (UI.palette_open and 1.0 or 0.0)
+        UI.pal_anim_v = UI.pal_anim_v or 0.0
+        local target_pal = UI.palette_open and 1.0 or 0.0
+        UI.pal_anim_t, UI.pal_anim_v = UI.SpringDamp(UI.pal_anim_t, target_pal, UI.pal_anim_v, 200.0, 16.0, env.app_dt)
+        UI.is_interactable = UI.palette_open
+
+        if UI.pal_anim_t > 0.01 then
             UI.palette_height = math.max(150, math.min(total_h - 100, UI.palette_height))
-            reaper.ImGui_BeginChild(ctx, "pal_pane", canvas_w, UI.palette_height, 0, reaper.ImGui_WindowFlags_NoScrollbar())
-            local dl_pal = reaper.ImGui_GetWindowDrawList(ctx)
-            local px, py = reaper.ImGui_GetCursorScreenPos(ctx)
-            local mx, my = reaper.ImGui_GetMousePos(ctx)
+            local current_h = UI.palette_height * UI.pal_anim_t
             
-            -- FLUID COLUMN MATH & DRAG/DROP
-            local col_count = 0; for _, c in ipairs(UI.active_palette) do if not c.is_deleting then col_count = col_count + 1 end end
-            local base_target_w = canvas_w / math.max(1, col_count)
-            local cur_x = px
+            reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), UI.pal_anim_t)
+            local flags = reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse()
+            if not UI.is_interactable then flags = flags | reaper.ImGui_WindowFlags_NoInputs() end
+            local is_vis = reaper.ImGui_BeginChild(ctx, "pal_pane_v2", canvas_w, current_h, 0, flags)
             
-            for i, p_col in ipairs(UI.active_palette) do
-                local c_id = "pal_col_"..p_col.id
-                if not UI.physics_states[c_id] then UI.physics_states[c_id] = { w = 0, x = cur_x, vel_w=0, vel_x=0 } end
-                local p_st = UI.physics_states[c_id]
+            if is_vis then
+                local dl_pal = reaper.ImGui_GetWindowDrawList(ctx)
+                local px, py = reaper.ImGui_GetCursorScreenPos(ctx)
+                local mx, my = reaper.ImGui_GetMousePos(ctx)
                 
-                local target_w = p_col.is_deleting and 0 or base_target_w
-                p_st.w, p_st.vel_w = UI.SpringDamp(p_st.w, target_w, p_st.vel_w, 250.0, 18.0, env.app_dt)
+                -- FLUID COLUMN MATH & DRAG/DROP
+                local col_count = 0; for _, c in ipairs(UI.active_palette) do if not c.is_deleting then col_count = col_count + 1 end end
+                local base_target_w = canvas_w / math.max(1, col_count)
+                local cur_x = px
                 
-                -- GRIP ZONE LOGIC (Must come first to calculate drag state)
-                local grip_zone_h = 90
-                reaper.ImGui_SetCursorScreenPos(ctx, p_st.x, py + UI.palette_height - grip_zone_h)
-                UI.Safe_InvisibleButton(ctx, "grip_"..c_id, p_st.w, grip_zone_h)
-                
-                if reaper.ImGui_IsItemActivated(ctx) then 
-                    UI.drag_col_idx = i
-                    UI.drag_mem.pal_off_x = mx - p_st.x -- Capture the exact grab pixel!
-                end
-                if reaper.ImGui_IsItemDeactivated(ctx) and UI.drag_col_idx == i then UI.drag_col_idx = nil end
-                
-                local is_dragged = (UI.drag_col_idx == i) and select(2, pcall(reaper.ImGui_IsItemActive, ctx))
-                
-                -- PERFECT 1:1 X-COORDINATE PHYSICS
-                if is_dragged then 
-                    p_st.x = mx - UI.drag_mem.pal_off_x
-                    p_st.vel_x = 0
-                else 
-                    p_st.x, p_st.vel_x = UI.SpringDamp(p_st.x, cur_x, p_st.vel_x, 250.0, 18.0, env.app_dt) 
-                end
-                
-                if p_col.is_deleting and p_st.w < 2 then table.remove(UI.active_palette, i) else
+                for i, p_col in ipairs(UI.active_palette) do
+                    local c_id = "pal_col_"..p_col.id
+                    if not UI.physics_states[c_id] then UI.physics_states[c_id] = { w = 0, x = cur_x, vel_w=0, vel_x=0 } end
+                    local p_st = UI.physics_states[c_id]
                     
-                    if is_dragged then
-                        reaper.ImGui_DrawList_AddRectFilled(dl_pal, p_st.x + 4, py + 4, p_st.x + p_st.w + 4, py + UI.palette_height + 4, 0x00000044)
-                        reaper.ImGui_DrawList_AddRectFilled(dl_pal, p_st.x, py, p_st.x + p_st.w, py + UI.palette_height, p_col.hex & 0xFFFFFF00 | 0xEE)
-                    else
-                        reaper.ImGui_DrawList_AddRectFilled(dl_pal, p_st.x, py, p_st.x + p_st.w, py + UI.palette_height, p_col.hex)
+                    local target_w = p_col.is_deleting and 0 or base_target_w
+                    p_st.w, p_st.vel_w = UI.SpringDamp(p_st.w, target_w, p_st.vel_w, 250.0, 18.0, env.app_dt)
+                    
+                    -- GRIP ZONE LOGIC
+                    local grip_zone_h = 90
+                    reaper.ImGui_SetCursorScreenPos(ctx, p_st.x, py + current_h - grip_zone_h)
+                    UI.Safe_InvisibleButton(ctx, "grip_"..c_id, p_st.w, grip_zone_h)
+                    
+                    if reaper.ImGui_IsItemActivated(ctx) then 
+                        UI.drag_col_idx = i
+                        UI.drag_mem.pal_off_x = mx - p_st.x 
+                    end
+                    if reaper.ImGui_IsItemDeactivated(ctx) and UI.drag_col_idx == i then UI.drag_col_idx = nil end
+                    
+                    local is_dragged = (UI.drag_col_idx == i) and select(2, pcall(reaper.ImGui_IsItemActive, ctx))
+                    
+                    if is_dragged then 
+                        p_st.x = mx - UI.drag_mem.pal_off_x
+                        p_st.vel_x = 0
+                    else 
+                        p_st.x, p_st.vel_x = UI.SpringDamp(p_st.x, cur_x, p_st.vel_x, 250.0, 18.0, env.app_dt) 
                     end
                     
-                    local txt_col = env.palette_engine and env.palette_engine.GetBestTextColor(p_col.hex) or 0xFFFFFFFF
-                    local name = env.palette_engine and env.palette_engine.GetColorName(p_col.hex) or p_col.token
-                    local hex_str = string.format("#%06X", (p_col.hex >> 8) & 0xFFFFFF)
-                    
-                    local nw, nh = reaper.ImGui_CalcTextSize(ctx, name)
-                    reaper.ImGui_DrawList_AddText(dl_pal, p_st.x + (p_st.w/2) - (nw/2), py + UI.palette_height - 70, txt_col, name)
-                    local hw = reaper.ImGui_CalcTextSize(ctx, hex_str)
-                    reaper.ImGui_DrawList_AddText(dl_pal, p_st.x + (p_st.w/2) - (hw/2), py + UI.palette_height - 50, txt_col & 0xFFFFFF88, hex_str)
-                    
-                    -- GRIP HINT
-                    local gx = p_st.x + (p_st.w/2)
-                    local gy = py + UI.palette_height - 20
-                    local grip_col = txt_col & 0xFFFFFF00 | (is_dragged and 0xFF or 0x44)
-                    reaper.ImGui_DrawList_AddCircleFilled(dl_pal, gx - 8, gy, 2, grip_col)
-                    reaper.ImGui_DrawList_AddCircleFilled(dl_pal, gx,     gy, 2, grip_col)
-                    reaper.ImGui_DrawList_AddCircleFilled(dl_pal, gx + 8, gy, 2, grip_col)
-                    if reaper.ImGui_IsItemHovered(ctx) then reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_ResizeEW()) end
-                    
-                    -- PREMIUM KILL SWITCH (Math based hover, no blocking invisible buttons)
-                    local is_upper_hov = (mx >= p_st.x and mx <= p_st.x + p_st.w and my >= py and my < py + UI.palette_height - grip_zone_h)
-                    if is_upper_hov and not is_dragged and not UI.hover_states.picker_active then
-                        local kx, ky = p_st.x + (p_st.w/2) - 16, py + (UI.palette_height/2) - 30
-                        reaper.ImGui_SetCursorScreenPos(ctx, kx, ky)
-                        UI.Safe_InvisibleButton(ctx, "kill_"..p_col.id, 32, 32)
-                        local kill_hov = reaper.ImGui_IsItemHovered(ctx)
+                    if p_col.is_deleting and p_st.w < 2 then table.remove(UI.active_palette, i) else
+                        if is_dragged then
+                            reaper.ImGui_DrawList_AddRectFilled(dl_pal, p_st.x + 4, py + 4, p_st.x + p_st.w + 4, py + current_h + 4, 0x00000044)
+                            reaper.ImGui_DrawList_AddRectFilled(dl_pal, p_st.x, py, p_st.x + p_st.w, py + current_h, p_col.hex & 0xFFFFFF00 | 0xEE)
+                        else
+                            reaper.ImGui_DrawList_AddRectFilled(dl_pal, p_st.x, py, p_st.x + p_st.w, py + current_h, p_col.hex)
+                        end
                         
-                        -- Adapts to the smart text color (White or Dark) with smooth alphas
-                        local k_alpha = kill_hov and 1.0 or 0.3
-                        local k_col = txt_col & 0xFFFFFF00 | math.floor(0xFF * k_alpha)
-                        if kill_hov then reaper.ImGui_DrawList_AddCircleFilled(dl_pal, kx+16, ky+16, 20, txt_col & 0xFFFFFF00 | 0x22) end
-                        reaper.ImGui_DrawList_AddLine(dl_pal, kx+8, ky+8, kx+24, ky+24, k_col, 3.0)
-                        reaper.ImGui_DrawList_AddLine(dl_pal, kx+24, ky+8, kx+8, ky+24, k_col, 3.0)
+                        local txt_col = env.palette_engine and env.palette_engine.GetBestTextColor(p_col.hex) or 0xFFFFFFFF
+                        local name = env.palette_engine and env.palette_engine.GetColorName(p_col.hex) or p_col.token
+                        local hex_str = string.format("#%06X", (p_col.hex >> 8) & 0xFFFFFF)
                         
-                        if reaper.ImGui_IsItemClicked(ctx) then p_col.is_deleting = true; UI.PushNotification("Deleted " .. name, txt_col) end
+                        local nw, nh = reaper.ImGui_CalcTextSize(ctx, name)
+                        reaper.ImGui_DrawList_AddText(dl_pal, p_st.x + (p_st.w/2) - (nw/2), py + current_h - 70, txt_col, name)
+                        local hw = reaper.ImGui_CalcTextSize(ctx, hex_str)
+                        reaper.ImGui_DrawList_AddText(dl_pal, p_st.x + (p_st.w/2) - (hw/2), py + current_h - 50, txt_col & 0xFFFFFF88, hex_str)
+                        
+                        local gx, gy = p_st.x + (p_st.w/2), py + current_h - 20
+                        local grip_col = txt_col & 0xFFFFFF00 | (is_dragged and 0xFF or 0x44)
+                        reaper.ImGui_DrawList_AddCircleFilled(dl_pal, gx - 8, gy, 2, grip_col)
+                        reaper.ImGui_DrawList_AddCircleFilled(dl_pal, gx,     gy, 2, grip_col)
+                        reaper.ImGui_DrawList_AddCircleFilled(dl_pal, gx + 8, gy, 2, grip_col)
+                        if reaper.ImGui_IsItemHovered(ctx) then reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_ResizeEW()) end
+                        
+                        local is_upper_hov = (mx >= p_st.x and mx <= p_st.x + p_st.w and my >= py and my < py + current_h - grip_zone_h)
+                        if is_upper_hov and not is_dragged and not UI.hover_states.picker_active then
+                            local kx, ky = p_st.x + (p_st.w/2) - 16, py + (current_h/2) - 30
+                            reaper.ImGui_SetCursorScreenPos(ctx, kx, ky)
+                            UI.Safe_InvisibleButton(ctx, "kill_"..p_col.id, 32, 32)
+                            local kill_hov = reaper.ImGui_IsItemHovered(ctx)
+                            local k_alpha = kill_hov and 1.0 or 0.3
+                            local k_col = txt_col & 0xFFFFFF00 | math.floor(0xFF * k_alpha)
+                            if kill_hov then reaper.ImGui_DrawList_AddCircleFilled(dl_pal, kx+16, ky+16, 20, txt_col & 0xFFFFFF00 | 0x22) end
+                            reaper.ImGui_DrawList_AddLine(dl_pal, kx+8, ky+8, kx+24, ky+24, k_col, 3.0)
+                            reaper.ImGui_DrawList_AddLine(dl_pal, kx+24, ky+8, kx+8, ky+24, k_col, 3.0)
+                            if reaper.ImGui_IsItemClicked(ctx) then p_col.is_deleting = true; UI.PushNotification("Deleted " .. name, txt_col) end
+                        end
+                    end
+                    if not p_col.is_deleting then cur_x = cur_x + target_w end
+                end
+
+                if UI.drag_col_idx and select(2, pcall(reaper.ImGui_IsMouseDragging, ctx, 0)) then
+                    local dragged_col = UI.active_palette[UI.drag_col_idx]
+                    local d_center = UI.physics_states["pal_col_"..dragged_col.id].x + (base_target_w / 2)
+                    
+                    if d_center > px + (UI.drag_col_idx * base_target_w) and UI.drag_col_idx < #UI.active_palette then
+                        UI.active_palette[UI.drag_col_idx] = UI.active_palette[UI.drag_col_idx + 1]
+                        UI.active_palette[UI.drag_col_idx + 1] = dragged_col
+                        UI.drag_col_idx = UI.drag_col_idx + 1
+                    elseif d_center < px + ((UI.drag_col_idx - 1) * base_target_w) and UI.drag_col_idx > 1 then
+                        UI.active_palette[UI.drag_col_idx] = UI.active_palette[UI.drag_col_idx - 1]
+                        UI.active_palette[UI.drag_col_idx - 1] = dragged_col
+                        UI.drag_col_idx = UI.drag_col_idx - 1
                     end
                 end
-                if not p_col.is_deleting then cur_x = cur_x + target_w end
-            end
 
-            -- FLAWLESS DRAG SWAP MATH
-            if UI.drag_col_idx and select(2, pcall(reaper.ImGui_IsMouseDragging, ctx, 0)) then
-                local dragged_col = UI.active_palette[UI.drag_col_idx]
-                local d_center = UI.physics_states["pal_col_"..dragged_col.id].x + (base_target_w / 2)
-                
-                if d_center > px + (UI.drag_col_idx * base_target_w) and UI.drag_col_idx < #UI.active_palette then
-                    UI.active_palette[UI.drag_col_idx] = UI.active_palette[UI.drag_col_idx + 1]
-                    UI.active_palette[UI.drag_col_idx + 1] = dragged_col
-                    UI.drag_col_idx = UI.drag_col_idx + 1
-                elseif d_center < px + ((UI.drag_col_idx - 1) * base_target_w) and UI.drag_col_idx > 1 then
-                    UI.active_palette[UI.drag_col_idx] = UI.active_palette[UI.drag_col_idx - 1]
-                    UI.active_palette[UI.drag_col_idx - 1] = dragged_col
-                    UI.drag_col_idx = UI.drag_col_idx - 1
-                end
-            end
+                if not UI.hover_states.picker_active then
+                    local gap_x = px
+                    for i = 1, col_count + 1 do
+                        if i > 1 then gap_x = gap_x + base_target_w end
+                        local gx_center = (i == 1) and px or ((i > col_count) and px + canvas_w or gap_x)
+                        reaper.ImGui_SetCursorScreenPos(ctx, gx_center - 15, py)
+                        UI.Safe_InvisibleButton(ctx, "gap_"..i, 30, current_h)
+                        
+                        if reaper.ImGui_IsItemHovered(ctx) and not UI.drag_col_idx then
+                            reaper.ImGui_SetTooltip(ctx, "Click: Generate Harmonic Variant\nShift+Click: Force Contrast Variant")
+                            
+                            -- Draw Gap Highlight
+                            local is_l_down = reaper.ImGui_IsMouseDown(ctx, 0)
+                            local is_r_down = reaper.ImGui_IsMouseDown(ctx, 1)
+                            local ring_col = (is_l_down or is_r_down) and 0x00E5FFFF or 0xFFFFFFCC
+                            reaper.ImGui_DrawList_AddCircleFilled(dl_pal, gx_center, py + (current_h/2), 16, ring_col)
+                            reaper.ImGui_DrawList_AddLine(dl_pal, gx_center-6, py + (current_h/2), gx_center+6, py + (current_h/2), 0x111111FF, 3.0)
+                            reaper.ImGui_DrawList_AddLine(dl_pal, gx_center, py + (current_h/2)-6, gx_center, py + (current_h/2)+6, 0x111111FF, 3.0)
 
-            -- GAP INSERTERS (+) - Only active if the search popup is closed
-            if not UI.hover_states.picker_active then
-                local gap_x = px
-                for i = 1, col_count + 1 do
-                    if i > 1 then gap_x = gap_x + base_target_w end
-                    local gx_center = (i == 1) and px or ((i > col_count) and px + canvas_w or gap_x)
-                    reaper.ImGui_SetCursorScreenPos(ctx, gx_center - 15, py)
-                    UI.Safe_InvisibleButton(ctx, "gap_"..i, 30, UI.palette_height)
-                    if reaper.ImGui_IsItemHovered(ctx) and not UI.drag_col_idx then
-                        reaper.ImGui_DrawList_AddCircleFilled(dl_pal, gx_center, py + (UI.palette_height/2), 16, 0xFFFFFFCC)
-                        reaper.ImGui_DrawList_AddLine(dl_pal, gx_center-6, py + (UI.palette_height/2), gx_center+6, py + (UI.palette_height/2), 0x111111FF, 3.0)
-                        reaper.ImGui_DrawList_AddLine(dl_pal, gx_center, py + (UI.palette_height/2)-6, gx_center, py + (UI.palette_height/2)+6, 0x111111FF, 3.0)
-                        if reaper.ImGui_IsItemClicked(ctx) then
-                            local new_hex = 0x00E5FFFF -- Default fallback
-                            table.insert(UI.active_palette, i, { id=math.random(10000,99999), hex=new_hex, token="New Color" })
-                            UI.PushNotification("Added New Color", new_hex)
+                            if reaper.ImGui_IsItemClicked(ctx, 0) or reaper.ImGui_IsItemClicked(ctx, 1) then
+                                local neighbor = UI.active_palette[i - 1] or UI.active_palette[1]
+                                local is_shift = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) or reaper.ImGui_IsItemClicked(ctx, 1)
+                                
+                                local history_id = neighbor.last_row_id or 0
+
+                                local new_hex, new_token, n_gen, n_drift, winning_row_id = UI.PaletteEngine.GetHarmoniousVariant(
+                                    neighbor.hex, neighbor.token, neighbor.gen_index, neighbor.hue_drift, is_shift, history_id
+                                )
+
+                                -- CRITICAL UX FIX: Update the neighbor's DNA. 
+                                -- This forces the algorithm forward if you spam-click the same '+' button.
+                                neighbor.gen_index = n_gen
+                                neighbor.hue_drift = n_drift
+                                neighbor.last_row_id = winning_row_id
+
+                                table.insert(UI.active_palette, i, { 
+                                    id = math.random(10000,99999), 
+                                    hex = new_hex, 
+                                    token = new_token, 
+                                    gen_index = n_gen, 
+                                    hue_drift = n_drift,
+                                    last_row_id = winning_row_id
+                                })
+                                UI.PushNotification("Added " .. new_token, new_hex)
+                            end
                         end
                     end
                 end
-            end
 
-            -- THE SEARCH & PICKER POPUP ICON
-            local bar_w = 40; local bar_x = px + (canvas_w/2) - (bar_w/2); local bar_y = py + 16
-            reaper.ImGui_DrawList_AddRectFilled(dl_pal, bar_x, bar_y, bar_x + bar_w, bar_y + 40, 0x111111CC, 20.0)
-            reaper.ImGui_DrawList_AddRect(dl_pal, bar_x, bar_y, bar_x + bar_w, bar_y + 40, 0xFFFFFF22, 20.0, 0, 1.0)
-            
-            reaper.ImGui_SetCursorScreenPos(ctx, bar_x + 6, bar_y + 6)
-            if UI.DrawVectorIcon(ctx, dl_pal, "pal_search_btn", "SEARCH", UI.hover_states.picker_active) then
-                UI.hover_states.picker_active = true
-                pcall(reaper.ImGui_OpenPopup, ctx, "ColorPickerPopup")
+                local bar_w = 40; local bar_x = px + (canvas_w/2) - (bar_w/2); local bar_y = py + 16
+                reaper.ImGui_DrawList_AddRectFilled(dl_pal, bar_x, bar_y, bar_x + bar_w, bar_y + 40, 0x111111CC, 20.0)
+                reaper.ImGui_DrawList_AddRect(dl_pal, bar_x, bar_y, bar_x + bar_w, bar_y + 40, 0xFFFFFF22, 20.0, 0, 1.0)
+                
+                reaper.ImGui_SetCursorScreenPos(ctx, bar_x + 6, bar_y + 6)
+                if UI.DrawVectorIcon(ctx, dl_pal, "pal_search_btn", "SEARCH", UI.hover_states.picker_active) then
+                    UI.hover_states.picker_active = true
+                    pcall(reaper.ImGui_OpenPopup, ctx, "ColorPickerPopup")
+                end
+                
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PopupBg(), 0x1A1A1EFF)
+                reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_PopupRounding(), 12.0)
+                if select(2, pcall(reaper.ImGui_BeginPopup, ctx, "ColorPickerPopup")) then
+                    if not UI.picker_color then UI.picker_color = 0x00E5FFFF; UI.picker_search = "" end
+                    reaper.ImGui_PushItemWidth(ctx, 220)
+                    local ok_txt, changed_txt, new_str = pcall(reaper.ImGui_InputTextWithHint, ctx, "##cp_search", "Type HEX...", UI.picker_search)
+                    if ok_txt and changed_txt then
+                        UI.picker_search = new_str
+                        local hex_str = type(new_str) == "string" and new_str:match("#?([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])") or nil
+                        if hex_str then UI.picker_color = (tonumber(hex_str, 16) << 8) | 0xFF end
+                    end
+                    reaper.ImGui_Spacing(ctx)
+                    local flags = reaper.ImGui_ColorEditFlags_NoSidePreview() | reaper.ImGui_ColorEditFlags_NoAlpha() | reaper.ImGui_ColorEditFlags_PickerHueWheel()
+                    local ok_col, changed_col, new_col = pcall(reaper.ImGui_ColorPicker4, ctx, "##cp_picker", UI.picker_color, flags)
+                    if ok_col and changed_col and type(new_col) == "number" then
+                        UI.picker_color = new_col
+                        UI.picker_search = string.format("#%06X", (new_col >> 8) & 0xFFFFFF)
+                    end
+                    reaper.ImGui_Spacing(ctx)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0xFFFFFF22)
+                    if select(2, pcall(reaper.ImGui_Button, ctx, "+ ADD TO PALETTE", 220, 30)) then
+                        local t_name = env.palette_engine and env.palette_engine.GetColorName(UI.picker_color) or "Custom"
+                        table.insert(UI.active_palette, { id=math.random(10000,99999), hex=UI.picker_color, token=t_name })
+                        UI.PushNotification("Added " .. t_name, UI.picker_color)
+                        pcall(reaper.ImGui_CloseCurrentPopup, ctx)
+                    end
+                    reaper.ImGui_PopStyleColor(ctx, 1); reaper.ImGui_PopItemWidth(ctx)
+                    pcall(reaper.ImGui_EndPopup, ctx)
+                else
+                    UI.hover_states.picker_active = false
+                end
+                reaper.ImGui_PopStyleVar(ctx, 1); reaper.ImGui_PopStyleColor(ctx, 1)
+
+                -- DIVIDER HITBOX (Controls final height)
+                reaper.ImGui_SetCursorScreenPos(ctx, px, py + current_h - 3)
+                UI.Safe_InvisibleButton(ctx, "pal_divider", canvas_w, 6)
+                if reaper.ImGui_IsItemHovered(ctx) then reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_ResizeNS()) end
+                if reaper.ImGui_IsItemActive(ctx) and reaper.ImGui_IsMouseDragging(ctx, 0) then
+                    local _, dy = reaper.ImGui_GetMouseDelta(ctx); UI.palette_height = UI.palette_height + dy
+                end
             end
-            
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PopupBg(), 0x1A1A1EFF)
-            reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_PopupRounding(), 12.0)
-            if select(2, pcall(reaper.ImGui_BeginPopup, ctx, "ColorPickerPopup")) then
-                if not UI.picker_color then UI.picker_color = 0x00E5FFFF; UI.picker_search = "" end
-                
-                reaper.ImGui_PushItemWidth(ctx, 220)
-                
-                -- PROPER PCALL UNPACKING: (success, is_changed, string_value)
-                local ok_txt, changed_txt, new_str = pcall(reaper.ImGui_InputTextWithHint, ctx, "##cp_search", "Type HEX...", UI.picker_search)
-                if ok_txt and changed_txt then
-                    UI.picker_search = new_str
-                    local hex_str = type(new_str) == "string" and new_str:match("#?([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])") or nil
-                    if hex_str then UI.picker_color = (tonumber(hex_str, 16) << 8) | 0xFF end
-                end
-                
-                reaper.ImGui_Spacing(ctx)
-                
-                local flags = reaper.ImGui_ColorEditFlags_NoSidePreview() | reaper.ImGui_ColorEditFlags_NoAlpha() | reaper.ImGui_ColorEditFlags_PickerHueWheel()
-                -- PROPER PCALL UNPACKING: (success, is_changed, color_number)
-                local ok_col, changed_col, new_col = pcall(reaper.ImGui_ColorPicker4, ctx, "##cp_picker", UI.picker_color, flags)
-                if ok_col and changed_col and type(new_col) == "number" then
-                    UI.picker_color = new_col
-                    UI.picker_search = string.format("#%06X", (new_col >> 8) & 0xFFFFFF)
-                end
-                
-                reaper.ImGui_Spacing(ctx)
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0xFFFFFF22)
-                
-                -- Button protection
-                if select(2, pcall(reaper.ImGui_Button, ctx, "+ ADD TO PALETTE", 220, 30)) then
-                    local t_name = env.palette_engine and env.palette_engine.GetColorName(UI.picker_color) or "Custom"
-                    table.insert(UI.active_palette, { id=math.random(10000,99999), hex=UI.picker_color, token=t_name })
-                    UI.PushNotification("Added " .. t_name, UI.picker_color)
-                    pcall(reaper.ImGui_CloseCurrentPopup, ctx)
-                end
-                
-                reaper.ImGui_PopStyleColor(ctx, 1)
-                reaper.ImGui_PopItemWidth(ctx)
-                pcall(reaper.ImGui_EndPopup, ctx)
-            else
-                UI.hover_states.picker_active = false
-            end
-            reaper.ImGui_PopStyleVar(ctx, 1)
-            reaper.ImGui_PopStyleColor(ctx, 1)
-            
             reaper.ImGui_EndChild(ctx)
-            
-            -- DIVIDER HITBOX
-            reaper.ImGui_SetCursorScreenPos(ctx, px, py + UI.palette_height - 3)
-            UI.Safe_InvisibleButton(ctx, "pal_divider", canvas_w, 6)
-            if reaper.ImGui_IsItemHovered(ctx) then reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_ResizeNS()) end
-            if reaper.ImGui_IsItemActive(ctx) and reaper.ImGui_IsMouseDragging(ctx, 0) then
-                local _, dy = reaper.ImGui_GetMouseDelta(ctx); UI.palette_height = UI.palette_height + dy
-            end
-            canvas_h = total_h - UI.palette_height
+            reaper.ImGui_PopStyleVar(ctx, 1)
+            canvas_h = total_h - current_h
         end
 
-        reaper.ImGui_BeginChild(ctx, "canvas_pane", canvas_w, canvas_h, 0, reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse())
-        local dl_ide = reaper.ImGui_GetWindowDrawList(ctx)
-
         local raw_cx, raw_cy = reaper.ImGui_GetCursorScreenPos(ctx)
+        
+        -- CRITICAL FIX: BeginGroup anchors the coordinates. PushClipRect contains the drawing.
+        reaper.ImGui_BeginGroup(ctx)
+        local dl_ide = reaper.ImGui_GetWindowDrawList(ctx)
+        pcall(reaper.ImGui_DrawList_PushClipRect, dl_ide, raw_cx, raw_cy, raw_cx + canvas_w, raw_cy + canvas_h, true)
+        
+        -- Force ImGui to respect the canvas dimensions in the layout engine
+        pcall(reaper.ImGui_SetCursorScreenPos, ctx, raw_cx, raw_cy)
+        reaper.ImGui_Dummy(ctx, canvas_w, canvas_h)
+        pcall(reaper.ImGui_SetCursorScreenPos, ctx, raw_cx, raw_cy)
         local is_canvas_hovered = reaper.ImGui_IsWindowHovered(ctx)
 
         -- FREE-WHEEL RELATIVE ZOOM MATRIX
@@ -1176,10 +1433,12 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local cy = raw_cy + offset_y + UI.camera.pan_y
 
         reaper.ImGui_DrawList_AddRectFilled(dl_ide, cx, cy, cx + grid_w * UI.camera.zoom, cy + grid_h * UI.camera.zoom, 0x0A0A0DFF, 12.0 * UI.camera.zoom)
-        for y = 0, UI.wb_grid_rows do 
-            for x = 0, UI.wb_grid_cols do 
-                reaper.ImGui_DrawList_AddCircleFilled(dl_ide, cx + (x * cell_size * UI.camera.zoom), cy + (y * cell_size * UI.camera.zoom), 1.5 * UI.camera.zoom, 0xFFFFFF1A) 
-            end 
+        if UI.edit_mode then
+            for y = 0, UI.wb_grid_rows do 
+                for x = 0, UI.wb_grid_cols do 
+                    reaper.ImGui_DrawList_AddCircleFilled(dl_ide, cx + (x * cell_size * UI.camera.zoom), cy + (y * cell_size * UI.camera.zoom), 1.5 * UI.camera.zoom, 0xFFFFFF1A) 
+                end 
+            end
         end
 
         local sel_comp = nil
@@ -1193,95 +1452,114 @@ function UI.DrawWorkbenchWindow(ctx, env)
                     local bx, by, bw, bh = GetBounds(c)
                     local comp_x, comp_y = cx + bx * UI.camera.zoom, cy + by * UI.camera.zoom
                     local comp_col = is_sel and 0x00E5FFFF or 0x444444FF
-                    reaper.ImGui_SetCursorScreenPos(ctx, comp_x, comp_y)
-                    reaper.ImGui_InvisibleButton(ctx, "ide_hit_"..c.id, bw * UI.camera.zoom, bh * UI.camera.zoom)
                     
-                    if reaper.ImGui_IsItemClicked(ctx) then
-                        UI.drag_mem.pending_push = true
-                        local keep = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) or reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl())
-                        if not UI.IsComponentSelected(c.id) then UI.SelectComponent(c.id, keep) end
-                        local mx, my = reaper.ImGui_GetMousePos(ctx)
-                        UI.drag_mem.mouse_start_x = mx; UI.drag_mem.mouse_start_y = my
-                        UI.drag_mem.group_starts = {}
-                        for _, sc in ipairs(UI.wb_schema_buffer) do
-                            if UI.IsComponentSelected(sc.id) then UI.drag_mem.group_starts[sc.id] = {x = sc.x, y = sc.y} end
+                    -- ==========================================================
+                    -- THE SELECTION BRIDGE (Universal Coordinate Hit-Test for Play Mode)
+                    -- ==========================================================
+                    if not UI.edit_mode then
+                        if select(2, pcall(reaper.ImGui_IsMouseClicked, ctx, 0)) then
+                            local mx, my = reaper.ImGui_GetMousePos(ctx)
+                            if mx >= comp_x and mx <= comp_x + (bw * UI.camera.zoom) and my >= comp_y and my <= comp_y + (bh * UI.camera.zoom) then
+                                UI.selected_comp_ids = {c.id}
+                            end
                         end
-                        UI.drag_mem.is_snapped_x = false; UI.drag_mem.is_snapped_y = false
                     end
-                    if reaper.ImGui_IsItemActive(ctx) and reaper.ImGui_IsMouseDragging(ctx, 0) then
-                        local mx, my = reaper.ImGui_GetMousePos(ctx)
-                        
-                        -- ALT-DRAG DUPLICATION
-                        if reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Alt()) and not UI.drag_mem.alt_cloned then
-                            UI.drag_mem.alt_cloned = true
-                            local clone = {}; for k,v in pairs(c) do clone[k] = v end
-                            -- Append a microsecond timestamp to the ID to guarantee it never collides
-                            clone.id = c.id .. "_" .. tostring(math.floor(reaper.time_precise() * 100000))
-                            table.insert(UI.wb_schema_buffer, clone)
-                            UI.SelectComponent(clone.id, false)
-                            UI.drag_mem.group_starts = { [clone.id] = { x = c.x, y = c.y } }
-                            c = clone 
-                        end
 
-                        if UI.drag_mem.pending_push then UI.PushUndoState(); UI.drag_mem.pending_push = false end
-                        local my_start = UI.drag_mem.group_starts[c.id]
-                        if my_start then
-                            local dx = (mx - UI.drag_mem.mouse_start_x) / UI.camera.zoom
-                            local dy = (my - UI.drag_mem.mouse_start_y) / UI.camera.zoom
-                            
-                            -- Build unified bounding box for the selection group
-                            local g_min_x, g_min_y, g_max_x, g_max_y = 99999, 99999, -99999, -99999
-                            local unselected = {}
+                    -- ==========================================================
+                    -- LAYOUT DRAG HITBOX / BOUNDING BOX INTERACTION: ONLY ACTIVE IN DESIGN MODE
+                    -- ==========================================================
+                    if UI.edit_mode then
+                        reaper.ImGui_SetCursorScreenPos(ctx, comp_x, comp_y)
+                        reaper.ImGui_InvisibleButton(ctx, "ide_hit_"..c.id, bw * UI.camera.zoom, bh * UI.camera.zoom)
+                        
+                        if reaper.ImGui_IsItemClicked(ctx) then
+                            UI.drag_mem.pending_push = true
+                            local keep = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) or reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl())
+                            if not UI.IsComponentSelected(c.id) then UI.SelectComponent(c.id, keep) end
+                            local mx, my = reaper.ImGui_GetMousePos(ctx)
+                            UI.drag_mem.mouse_start_x = mx; UI.drag_mem.mouse_start_y = my
+                            UI.drag_mem.group_starts = {}
                             for _, sc in ipairs(UI.wb_schema_buffer) do
-                                if UI.IsComponentSelected(sc.id) then
-                                    local st = UI.drag_mem.group_starts[sc.id]
-                                    local s_bw, s_bh = sc.w or 60, sc.h or 20
-                                    if sc.type == "AuraKnob" then s_bw, s_bh = (sc.radius or 16)*2, (sc.radius or 16)*2 end
-                                    if st then
-                                        g_min_x = math.min(g_min_x, st.x)
-                                        g_min_y = math.min(g_min_y, st.y)
-                                        g_max_x = math.max(g_max_x, st.x + s_bw)
-                                        g_max_y = math.max(g_max_y, st.y + s_bh)
-                                    end
-                                else
-                                    table.insert(unselected, sc)
-                                end
+                                if UI.IsComponentSelected(sc.id) then UI.drag_mem.group_starts[sc.id] = {x = sc.x, y = sc.y} end
                             end
-                            
-                            -- Create a dummy component representing the entire group for snapping
-                            local g_w, g_h = g_max_x - g_min_x, g_max_y - g_min_y
-                            local group_c = { id = "GROUP", x = g_min_x, y = g_min_y, w = g_w, h = g_h, type = "GROUP" }
-                            local intended_g_x = g_min_x + dx
-                            local intended_g_y = g_min_y + dy
-                            
-                            -- Snap the entire group against unselected components
-                            if UI.snap_enabled and not reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) then
-                                ProcessSmartGuides(group_c, intended_g_x, intended_g_y, unselected, dl_ide, cx, cy, mx, my)
-                            else
-                                group_c.x = intended_g_x; group_c.y = intended_g_y
-                            end
-                            
-                            -- Calculate snapped delta
-                            local snapped_dx = group_c.x - g_min_x
-                            local snapped_dy = group_c.y - g_min_y
-                            
-                            -- Apply to all selected components
-                            for _, sc in ipairs(UI.wb_schema_buffer) do
-                                local st = UI.drag_mem.group_starts[sc.id]
-                                if st then
-                                    local s_bw, s_bh = sc.w or 60, sc.h or 20
-                                    if sc.type == "AuraKnob" then s_bw, s_bh = (sc.radius or 16)*2, (sc.radius or 16)*2 end
-                                    -- FLOOR THE VALUES TO PREVENT CRASHES
-                                    sc.x = math.max(0, math.floor(math.min(grid_w - s_bw, st.x + snapped_dx)))
-                                    sc.y = math.max(0, math.floor(math.min(grid_h - s_bh, st.y + snapped_dy)))
-                                end
-                            end
+                            UI.drag_mem.is_snapped_x = false; UI.drag_mem.is_snapped_y = false
                         end
-                    elseif reaper.ImGui_IsItemDeactivated(ctx) then
-                        UI.drag_mem.alt_cloned = false
+                        if reaper.ImGui_IsItemActive(ctx) and reaper.ImGui_IsMouseDragging(ctx, 0) then
+                            local mx, my = reaper.ImGui_GetMousePos(ctx)
+                            
+                            -- ALT-DRAG DUPLICATION
+                            if reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Alt()) and not UI.drag_mem.alt_cloned then
+                                UI.drag_mem.alt_cloned = true
+                                local clone = {}; for k,v in pairs(c) do clone[k] = v end
+                                -- Append a microsecond timestamp to the ID to guarantee it never collides
+                                clone.id = c.id .. "_" .. tostring(math.floor(reaper.time_precise() * 100000))
+                                table.insert(UI.wb_schema_buffer, clone)
+                                UI.SelectComponent(clone.id, false)
+                                UI.drag_mem.group_starts = { [clone.id] = { x = c.x, y = c.y } }
+                                c = clone 
+                            end
+
+                            if UI.drag_mem.pending_push then UI.PushUndoState(); UI.drag_mem.pending_push = false end
+                            local my_start = UI.drag_mem.group_starts[c.id]
+                            if my_start then
+                                local dx = (mx - UI.drag_mem.mouse_start_x) / UI.camera.zoom
+                                local dy = (my - UI.drag_mem.mouse_start_y) / UI.camera.zoom
+                                
+                                -- Build unified bounding box for the selection group
+                                local g_min_x, g_min_y, g_max_x, g_max_y = 99999, 99999, -99999, -99999
+                                local unselected = {}
+                                for _, sc in ipairs(UI.wb_schema_buffer) do
+                                    if UI.IsComponentSelected(sc.id) then
+                                        local st = UI.drag_mem.group_starts[sc.id]
+                                        local s_bw, s_bh = sc.w or 60, sc.h or 20
+                                        if sc.type == "AuraKnob" then s_bw, s_bh = (sc.radius or 16)*2, (sc.radius or 16)*2 end
+                                        if st then
+                                            g_min_x = math.min(g_min_x, st.x)
+                                            g_min_y = math.min(g_min_y, st.y)
+                                            g_max_x = math.max(g_max_x, st.x + s_bw)
+                                            g_max_y = math.max(g_max_y, st.y + s_bh)
+                                        end
+                                    else
+                                        table.insert(unselected, sc)
+                                    end
+                                end
+                                
+                                -- Create a dummy component representing the entire group for snapping
+                                local g_w, g_h = g_max_x - g_min_x, g_max_y - g_min_y
+                                local group_c = { id = "GROUP", x = g_min_x, y = g_min_y, w = g_w, h = g_h, type = "GROUP" }
+                                local intended_g_x = g_min_x + dx
+                                local intended_g_y = g_min_y + dy
+                                
+                                -- Snap the entire group against unselected components
+                                if UI.snap_enabled and not reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) then
+                                    ProcessSmartGuides(group_c, intended_g_x, intended_g_y, unselected, dl_ide, cx, cy, mx, my)
+                                else
+                                    group_c.x = intended_g_x; group_c.y = intended_g_y
+                                end
+                                
+                                -- Calculate snapped delta
+                                local snapped_dx = group_c.x - g_min_x
+                                local snapped_dy = group_c.y - g_min_y
+                                
+                                -- Apply to all selected components
+                                for _, sc in ipairs(UI.wb_schema_buffer) do
+                                    local st = UI.drag_mem.group_starts[sc.id]
+                                    if st then
+                                        local s_bw, s_bh = sc.w or 60, sc.h or 20
+                                        if sc.type == "AuraKnob" then s_bw, s_bh = (sc.radius or 16)*2, (sc.radius or 16)*2 end
+                                        -- FLOOR THE VALUES TO PREVENT CRASHES
+                                        sc.x = math.max(0, math.floor(math.min(grid_w - s_bw, st.x + snapped_dx)))
+                                        sc.y = math.max(0, math.floor(math.min(grid_h - s_bh, st.y + snapped_dy)))
+                                    end
+                                end
+                            end
+                        elseif reaper.ImGui_IsItemDeactivated(ctx) then
+                            UI.drag_mem.alt_cloned = false
+                        end
                     end
                     
                     env.p_min_x = cx; env.p_min_y = cy; env.scroll_x = 0; env.scroll_y = 0
+                    local live_val = c.val or c.default_val or 0.5
                     local c_mock = { 
                         id = c.id, 
                         x = c.x * UI.camera.zoom, 
@@ -1289,35 +1567,91 @@ function UI.DrawWorkbenchWindow(ctx, env)
                         w = (c.w or 60) * UI.camera.zoom, 
                         h = (c.h or 20) * UI.camera.zoom, 
                         radius = (c.radius or 16) * UI.camera.zoom, 
-                        align = c.align, label = c.label, color_token = c.color_token or "Teal", default_val=0.5,
-                        steps = c.steps, axis = c.axis, wrap_at = c.wrap_at, btn_w = c.btn_w and (c.btn_w * UI.camera.zoom) or nil, btn_h = c.btn_h and (c.btn_h * UI.camera.zoom) or nil, labels = c.labels
+                        align = c.align, label = c.label, color_token = c.color_token or "Teal", 
+                        default_val = live_val,
+                        routes = c.routes,
+                        is_bipolar = c.is_bipolar,
+                        steps = c.steps, axis = c.axis, wrap_at = c.wrap_at, 
+                        btn_w = c.btn_w and (c.btn_w * UI.camera.zoom) or nil, 
+                        btn_h = c.btn_h and (c.btn_h * UI.camera.zoom) or nil, 
+                        labels = c.labels
                     }
-                    local pst = { disp_val = 0.5, flash = 0.0 }
                     
-                    -- DEFAULT LAYER FALLBACK
+                    -- Initialize/fetch physics state for this component
+                    if not UI.physics_states[c.id] then
+                        UI.physics_states[c.id] = {
+                            disp_val = live_val,
+                            vel_val = 0.0,
+                            flash = 0.0
+                        }
+                    end
+                    local pst = UI.physics_states[c.id]
+                    
+                    -- Smoothly interpolate disp_val towards live_val
+                    pst.disp_val, pst.vel_val = UI.SpringDamp(pst.disp_val, live_val, pst.vel_val, 250.0, 18.0, env.app_dt or 0.016)
+                    
+                    -- Decelerate flash time
+                    if pst.flash > 0 then
+                        pst.flash = math.max(0, pst.flash - (env.app_dt or 0.016) * 3.0)
+                    end
+
+                    local disp_str = ""
+                    if type(c.get_format) == "function" then
+                        disp_str = c:get_format(live_val)
+                    elseif type(c.get_format) == "string" then
+                        local success, res = pcall(function() return c.get_format(c, live_val) end)
+                        if success then
+                            disp_str = res
+                        else
+                            disp_str = string.format("%.2f", live_val)
+                        end
+                    else
+                        disp_str = string.format("%.2f", live_val)
+                    end
+                    
+                    -- 1. Z-Override Fallback
                     local target_layer = c.z_override
                     if not target_layer then
                         if c.type == "Text" or c.type == "BackPanel" then target_layer = 3
                         elseif c.type == "Dropdown" or c.type == "Tooltip" then target_layer = 5
                         else target_layer = 4 end
                     end
-                    pcall(reaper.ImGui_DrawList_ChannelsSetCurrent, dl_ide, tonumber(target_layer) or target_layer)
+                    
+                    -- 2. THE FILTER LOGIC (Early Exit)
+                    if env.filter_layer and target_layer ~= env.filter_layer then
+                        goto skip_component
+                    end
 
-                    if c.type == "AuraKnob" then UI.DrawComponent_AuraKnob(ctx, dl_ide, c_mock, env, nil, false, 0.5, "0.5", pst)
-                    elseif c.type == "InlineDrag" then UI.DrawComponent_InlineDrag(ctx, dl_ide, c_mock, env, nil, false, 0.5, "0.5", pst)
-                    elseif c.type == "PeakMeter" then UI.DrawComponent_PeakMeter(ctx, dl_ide, c_mock, env, nil, false, 0.5, "", pst)
-                    elseif c.type == "VuMeter" then UI.DrawComponent_VuMeter(ctx, dl_ide, c_mock, env, nil, false, 0.5, "", pst)
-                    elseif c.type == "TogglePill" then UI.DrawComponent_TogglePill(ctx, dl_ide, c_mock, env, nil, false, 0.5, "", pst)
-                    elseif c.type == "ToggleLever" then UI.DrawComponent_ToggleLever(ctx, dl_ide, c_mock, env, nil, false, 0.5, "", pst)
+                    -- 3. THE LOCK LOGIC (Disable Interaction)
+                    local is_locked = (env.locked_layer and target_layer ~= env.locked_layer)
+                    if is_locked then pcall(reaper.ImGui_BeginDisabled, ctx) end
+
+                    pcall(reaper.ImGui_DrawList_ChannelsSetCurrent, dl_ide, target_layer)
+
+                    local changed, new_norm
+                    if c.type == "AuraKnob" then changed, new_norm = UI.DrawComponent_AuraKnob(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst)
+                    elseif c.type == "InlineDrag" then changed, new_norm = UI.DrawComponent_InlineDrag(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst)
+                    elseif c.type == "PeakMeter" then changed, new_norm = UI.DrawComponent_PeakMeter(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst)
+                    elseif c.type == "VuMeter" then changed, new_norm = UI.DrawComponent_VuMeter(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst)
+                    elseif c.type == "TogglePill" then changed, new_norm = UI.DrawComponent_TogglePill(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst)
+                    elseif c.type == "ToggleLever" then changed, new_norm = UI.DrawComponent_ToggleLever(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst)
                     elseif env.NodeUI then -- Safely call the extracted NodeUI renderers
-                        if c.type == "Fader" then env.NodeUI.DrawComponent_Fader(ctx, dl_ide, c_mock, env, nil, false, 0.5, "0.0", pst, UI)
-                        elseif c.type == "VFDScreen" then env.NodeUI.DrawComponent_VFDScreen(ctx, dl_ide, c_mock, env, nil, false, 0.5, "8.8", pst, UI)
-                        elseif c.type == "Dropdown" then env.NodeUI.DrawComponent_Dropdown(ctx, dl_ide, c_mock, env, nil, false, 0.5, "Option 1", pst, UI)
-                        elseif c.type == "BackPanel" then env.NodeUI.DrawComponent_BackPanel(ctx, dl_ide, c_mock, env, nil, false, 0.5, "", pst, UI)
-                        elseif c.type == "ScrewDecal" then env.NodeUI.DrawComponent_ScrewDecal(ctx, dl_ide, c_mock, env, nil, false, 0.5, "", pst, UI)
-                        elseif c.type == "RadioStrip" then env.NodeUI.DrawComponent_RadioStrip(ctx, dl_ide, c_mock, env, nil, false, 0.5, "", pst, UI)
+                        if c.type == "Fader" then changed, new_norm = env.NodeUI.DrawComponent_Fader(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst, UI)
+                        elseif c.type == "VFDScreen" then changed, new_norm = env.NodeUI.DrawComponent_VFDScreen(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst, UI)
+                        elseif c.type == "Dropdown" then changed, new_norm = env.NodeUI.DrawComponent_Dropdown(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst, UI)
+                        elseif c.type == "BackPanel" then changed, new_norm = env.NodeUI.DrawComponent_BackPanel(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst, UI)
+                        elseif c.type == "ScrewDecal" then changed, new_norm = env.NodeUI.DrawComponent_ScrewDecal(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst, UI)
+                        elseif c.type == "RadioStrip" then changed, new_norm = env.NodeUI.DrawComponent_RadioStrip(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst, UI)
                         end
                     end
+                    
+                    if not UI.edit_mode and changed and new_norm then
+                        c.val = new_norm
+                    end
+                    
+                    if is_locked then pcall(reaper.ImGui_EndDisabled, ctx) end
+                    
+                    ::skip_component::
                 end
             end
             pcall(reaper.ImGui_DrawList_ChannelsMerge, dl_ide)
@@ -1335,9 +1669,10 @@ function UI.DrawWorkbenchWindow(ctx, env)
                     g_max_y = math.max(g_max_y, comp_y + bh * UI.camera.zoom)
                 end
             end
-            if g_min_x < 99999 then
+            if g_min_x < 99999 and UI.edit_mode then
                 reaper.ImGui_DrawList_AddRect(dl_ide, g_min_x-4, g_min_y-4, g_max_x+4, g_max_y+4, 0xFFFFFF66, 4.0, 0, 1.0)
-                if #UI.selected_comp_ids == 1 and sel_comp then
+                -- RESIZE HANDLE LOCK: ONLY ACTIVE IN DESIGN MODE
+                if UI.edit_mode and #UI.selected_comp_ids == 1 and sel_comp then
                     local hw, hh = 12, 12; local hx, hy = g_max_x + 4 - hw, g_max_y + 4 - hh
                     reaper.ImGui_SetCursorScreenPos(ctx, hx, hy)
                     reaper.ImGui_InvisibleButton(ctx, "sz_"..sel_comp.id, hw, hh)
@@ -1355,70 +1690,73 @@ function UI.DrawWorkbenchWindow(ctx, env)
             end
         end
 
-        reaper.ImGui_SetCursorScreenPos(ctx, cx, cy)
-        reaper.ImGui_InvisibleButton(ctx, "canvas_drop_zone", grid_w * UI.camera.zoom, grid_h * UI.camera.zoom)
-        
-        local bg_clicked = reaper.ImGui_IsItemClicked(ctx, 0)
-        if bg_clicked then
-            local mx, my = reaper.ImGui_GetMousePos(ctx)
-            if not (reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) or reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl())) then UI.selected_comp_ids = {} end
-            UI.drag_mem.marquee_start_x = mx; UI.drag_mem.marquee_start_y = my; UI.drag_mem.is_marquee = true
-        end
-        if UI.drag_mem.is_marquee and reaper.ImGui_IsMouseDragging(ctx, 0) then
-            local mx, my = reaper.ImGui_GetMousePos(ctx)
-            local rx = math.min(UI.drag_mem.marquee_start_x, mx)
-            local ry = math.min(UI.drag_mem.marquee_start_y, my)
-            local rw = math.abs(mx - UI.drag_mem.marquee_start_x)
-            local rh = math.abs(my - UI.drag_mem.marquee_start_y)
-            reaper.ImGui_DrawList_AddRectFilled(dl_ide, rx, ry, rx + rw, ry + rh, 0x00E5FF22)
-            reaper.ImGui_DrawList_AddRect(dl_ide, rx, ry, rx + rw, ry + rh, 0x00E5FFFF, 0, 0, 1.0)
+        -- BACKDROP / DROP ZONE / MARQUEE: ONLY ACTIVE IN DESIGN MODE
+        if UI.edit_mode then
+            reaper.ImGui_SetCursorScreenPos(ctx, cx, cy)
+            reaper.ImGui_InvisibleButton(ctx, "canvas_drop_zone", grid_w * UI.camera.zoom, grid_h * UI.camera.zoom)
             
-            for _, c in ipairs(UI.wb_schema_buffer) do
-                local bx, by, bw, bh = GetBounds(c)
-                local comp_screen_x, comp_screen_y = cx + bx * UI.camera.zoom, cy + by * UI.camera.zoom
-                local comp_w, comp_h = bw * UI.camera.zoom, bh * UI.camera.zoom
-                if comp_screen_x < rx + rw and comp_screen_x + comp_w > rx and comp_screen_y < ry + rh and comp_screen_y + comp_h > ry then
-                    UI.SelectComponent(c.id, true)
-                end
-            end
-        end
-        if UI.drag_mem.is_marquee and reaper.ImGui_IsMouseReleased(ctx, 0) then UI.drag_mem.is_marquee = false end
-
-        if reaper.ImGui_BeginDragDropTarget(ctx) then
-            local accepted, payload = reaper.ImGui_AcceptDragDropPayload(ctx, 'NEW_COMP')
-            if accepted and payload then
+            local bg_clicked = reaper.ImGui_IsItemClicked(ctx, 0)
+            if bg_clicked then
                 local mx, my = reaper.ImGui_GetMousePos(ctx)
-                local world_drop_x = (mx - cx) / UI.camera.zoom
-                local world_drop_y = (my - cy) / UI.camera.zoom
-                local drop_x = math.max(0, math.floor(world_drop_x / 10) * 10)
-                local drop_y = math.max(0, math.floor(world_drop_y / 10) * 10)
-                local blueprint_prefix = active_target.name:match("([^%s:]+)$") or "MOD"
-                local new_id = string.format("%s_%s_%d", blueprint_prefix, payload, math.random(1000, 9999))
-                local nw, nh, nr = 60, 20, 16
-                if payload == "PeakMeter" then nw, nh = 20, 100
-                elseif payload == "VuMeter" then nw, nh = 100, 80
-                elseif payload == "TogglePill" then nw, nh = 50, 24
-                elseif payload == "ToggleLever" then nw, nh = 24, 50
-                elseif payload == "AuraKnob" then nr = 16; nw, nh = 32, 32
-                elseif payload == "Fader" then nw, nh = 30, 120
-                elseif payload == "VFDScreen" then nw, nh = 140, 50
-                elseif payload == "Dropdown" then nw, nh = 140, 28
-                elseif payload == "BackPanel" then nw, nh = 200, 160
-                elseif payload == "ScrewDecal" then nr = 5; nw, nh = 10, 10
-                elseif payload == "RadioStrip" then nw, nh = 240, 36 end
-                local new_comp = { id = new_id, type = payload, x = drop_x, y = drop_y, radius = nr, w = nw, h = nh, align = 1, label = payload:upper(), color_token = "Teal", param_key = "unmapped", default_val = 0.0, routes = {} }
-                if payload == "RadioStrip" then
-                    new_comp.steps = 6
-                    new_comp.axis = "H"
-                    new_comp.wrap_at = 6
-                    new_comp.btn_w = 32
-                    new_comp.btn_h = 24
-                    new_comp.labels = {"1", "2", "3", "4", "5", "6"}
-                end
-                UI.PushUndoState()
-                table.insert(UI.wb_schema_buffer, new_comp); UI.SelectComponent(new_id, false)
+                if not (reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) or reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl())) then UI.selected_comp_ids = {} end
+                UI.drag_mem.marquee_start_x = mx; UI.drag_mem.marquee_start_y = my; UI.drag_mem.is_marquee = true
             end
-            reaper.ImGui_EndDragDropTarget(ctx)
+            if UI.drag_mem.is_marquee and reaper.ImGui_IsMouseDragging(ctx, 0) then
+                local mx, my = reaper.ImGui_GetMousePos(ctx)
+                local rx = math.min(UI.drag_mem.marquee_start_x, mx)
+                local ry = math.min(UI.drag_mem.marquee_start_y, my)
+                local rw = math.abs(mx - UI.drag_mem.marquee_start_x)
+                local rh = math.abs(my - UI.drag_mem.marquee_start_y)
+                reaper.ImGui_DrawList_AddRectFilled(dl_ide, rx, ry, rx + rw, ry + rh, 0x00E5FF22)
+                reaper.ImGui_DrawList_AddRect(dl_ide, rx, ry, rx + rw, ry + rh, 0x00E5FFFF, 0, 0, 1.0)
+                
+                for _, c in ipairs(UI.wb_schema_buffer) do
+                    local bx, by, bw, bh = GetBounds(c)
+                    local comp_screen_x, comp_screen_y = cx + bx * UI.camera.zoom, cy + by * UI.camera.zoom
+                    local comp_w, comp_h = bw * UI.camera.zoom, bh * UI.camera.zoom
+                    if comp_screen_x < rx + rw and comp_screen_x + comp_w > rx and comp_screen_y < ry + rh and comp_screen_y + comp_h > ry then
+                        UI.SelectComponent(c.id, true)
+                    end
+                end
+            end
+            if UI.drag_mem.is_marquee and reaper.ImGui_IsMouseReleased(ctx, 0) then UI.drag_mem.is_marquee = false end
+
+            if reaper.ImGui_BeginDragDropTarget(ctx) then
+                local accepted, payload = reaper.ImGui_AcceptDragDropPayload(ctx, 'NEW_COMP')
+                if accepted and payload then
+                    local mx, my = reaper.ImGui_GetMousePos(ctx)
+                    local world_drop_x = (mx - cx) / UI.camera.zoom
+                    local world_drop_y = (my - cy) / UI.camera.zoom
+                    local drop_x = math.max(0, math.floor(world_drop_x / 10) * 10)
+                    local drop_y = math.max(0, math.floor(world_drop_y / 10) * 10)
+                    local blueprint_prefix = active_target.name:match("([^%s:]+)$") or "MOD"
+                    local new_id = string.format("%s_%s_%d", blueprint_prefix, payload, math.random(1000, 9999))
+                    local nw, nh, nr = 60, 20, 16
+                    if payload == "PeakMeter" then nw, nh = 20, 100
+                    elseif payload == "VuMeter" then nw, nh = 100, 80
+                    elseif payload == "TogglePill" then nw, nh = 50, 24
+                    elseif payload == "ToggleLever" then nw, nh = 24, 50
+                    elseif payload == "AuraKnob" then nr = 16; nw, nh = 32, 32
+                    elseif payload == "Fader" then nw, nh = 30, 120
+                    elseif payload == "VFDScreen" then nw, nh = 140, 50
+                    elseif payload == "Dropdown" then nw, nh = 140, 28
+                    elseif payload == "BackPanel" then nw, nh = 200, 160
+                    elseif payload == "ScrewDecal" then nr = 5; nw, nh = 10, 10
+                    elseif payload == "RadioStrip" then nw, nh = 240, 36 end
+                    local new_comp = { id = new_id, type = payload, x = drop_x, y = drop_y, radius = nr, w = nw, h = nh, align = 1, label = payload:upper(), color_token = "Teal", param_key = "unmapped", default_val = 0.0, routes = {} }
+                    if payload == "RadioStrip" then
+                        new_comp.steps = 6
+                        new_comp.axis = "H"
+                        new_comp.wrap_at = 6
+                        new_comp.btn_w = 32
+                        new_comp.btn_h = 24
+                        new_comp.labels = {"1", "2", "3", "4", "5", "6"}
+                    end
+                    UI.PushUndoState()
+                    table.insert(UI.wb_schema_buffer, new_comp); UI.SelectComponent(new_id, false)
+                end
+                reaper.ImGui_EndDragDropTarget(ctx)
+            end
         end
         pcall(reaper.ImGui_SetWindowFontScale, ctx, 1.0)
         
@@ -1488,18 +1826,19 @@ function UI.DrawWorkbenchWindow(ctx, env)
         -- DRAW TOAST NOTIFICATIONS
         UI.DrawNotifications(ctx, dl_ide, raw_cx + (canvas_w/2), raw_cy + canvas_h - 20, env.app_dt)
 
-        reaper.ImGui_EndChild(ctx)
+        pcall(reaper.ImGui_DrawList_PopClipRect, dl_ide)
+        reaper.ImGui_EndGroup(ctx) -- Ends canvas_pane group
         reaper.ImGui_EndGroup(ctx) -- ENDS PANE 2 WRAPPER
         reaper.ImGui_SameLine(ctx, 0, 16)
 
         -- ==========================================
         -- PANE 3: THEME MANAGER & DATA BINDING (GOLDEN RATIO 280px)
         -- ==========================================
-        reaper.ImGui_BeginChild(ctx, "props_pane", 280, 0, 0, 0)
+        reaper.ImGui_BeginChild(ctx, "omm_props_pane", 280, 0, 0, 0)
         local dl_right = reaper.ImGui_GetWindowDrawList(ctx)
         
         -- 1. Create a scrolling child window that stops 40 pixels before the bottom
-        reaper.ImGui_BeginChild(ctx, "PropertyScrollArea", 0, -40)
+        reaper.ImGui_BeginChild(ctx, "omm_prop_scroll", 0, -40)
         
         reaper.ImGui_TextColored(ctx, 0x00A5FFFF, "THEME MANAGER")
             reaper.ImGui_Spacing(ctx)
@@ -1563,7 +1902,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local clk_pal, open_pal, t_pal = UI.DrawAnimatedDisclosure(ctx, dl_right, "pal_disc", "MODULE PALETTE", UI.open_palette, env.app_dt, 280)
         UI.open_palette = open_pal
         if t_pal > 0.01 then
-            reaper.ImGui_BeginChild(ctx, "pal_list", 0, 160 * t_pal, 0, reaper.ImGui_WindowFlags_NoScrollbar())
+            reaper.ImGui_BeginChild(ctx, "omm_pal_list", 0, 160 * t_pal, 0, reaper.ImGui_WindowFlags_NoScrollbar())
             reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_pal)
             
             reaper.ImGui_PushItemWidth(ctx, 220)
@@ -1608,7 +1947,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local clk_set, open_set, t_set = UI.DrawAnimatedDisclosure(ctx, dl_right, "set_disc", "CANVAS SETTINGS", UI.open_settings, env.app_dt, 200)
         UI.open_settings = open_set
         if t_set > 0.01 then
-            reaper.ImGui_BeginChild(ctx, "set_list", 0, 40 * t_set, 0, reaper.ImGui_WindowFlags_NoScrollbar())
+            reaper.ImGui_BeginChild(ctx, "omm_set_list", 0, 40 * t_set, 0, reaper.ImGui_WindowFlags_NoScrollbar())
             reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_set)
             reaper.ImGui_PushItemWidth(ctx, 80)
             local c_chg, n_cols = reaper.ImGui_DragInt(ctx, "Cols##chas", UI.wb_grid_cols, 1, 4, 64)
@@ -1765,6 +2104,18 @@ function UI.DrawWorkbenchWindow(ctx, env)
             if k_chg then sel_comp.param_key = new_k end
             if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
 
+            local comp = sel_comp
+            if comp.type == "Knob" or comp.type == "Slider" or comp.type == "AuraKnob" or comp.type == "Fader" or comp.type == "InlineDrag" or comp.type == "TogglePill" or comp.type == "ToggleLever" then
+                reaper.ImGui_Spacing(ctx)
+                reaper.ImGui_TextColored(ctx, 0x888888FF, "Default Value")
+                local def_val = comp.default_val or comp.val or 0.0
+                local ok_def, new_def = pcall(reaper.ImGui_DragDouble, ctx, "##DefaultValue", def_val, 0.01, comp.min or 0.0, comp.max or 1.0, "%.2f")
+                if ok_def and select(2, pcall(reaper.ImGui_IsItemEdited, ctx)) then
+                    comp.default_val = new_def
+                end
+                if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
+            end
+
             -- ==========================================
             -- MACRO MULTIPLEXING: ROUTING MATRIX
             -- ==========================================
@@ -1888,31 +2239,38 @@ function UI.DrawWorkbenchWindow(ctx, env)
             UI.open_spatial = open_sp; reaper.ImGui_SetCursorScreenPos(ctx, px2, py2 + 28)
             
             if t_sp > 0.01 then
-                reaper.ImGui_BeginChild(ctx, "sp_list", 0, 100 * t_sp, 0, reaper.ImGui_WindowFlags_NoScrollbar())
-                reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_sp); reaper.ImGui_PushItemWidth(ctx, 80)
-                local x_chg, new_x = reaper.ImGui_DragInt(ctx, "X##cx", math.floor(sel_comp.x or 0), 1, 0, 2000)
-                if x_chg then sel_comp.x = new_x end
-                if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
-                
-                reaper.ImGui_SameLine(ctx, 0, 20)
-                local y_chg, new_y = reaper.ImGui_DragInt(ctx, "Y##cy", math.floor(sel_comp.y or 0), 1, 0, 2000)
-                if y_chg then sel_comp.y = new_y end
-                if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
-                
-                if sel_comp.type == "AuraKnob" then
-                    reaper.ImGui_Spacing(ctx); local r_chg, new_r = reaper.ImGui_DragInt(ctx, "Rad##crad", math.floor(sel_comp.radius or 16), 1, 5, 100)
-                    if r_chg then sel_comp.radius = new_r end
-                    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
-                else
-                    reaper.ImGui_Spacing(ctx); local w_chg, new_w = reaper.ImGui_DragInt(ctx, "W##cw", math.floor(sel_comp.w or 60), 1, 10, 500)
-                    if w_chg then sel_comp.w = new_w end
+                reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), t_sp)
+                local is_visible = reaper.ImGui_BeginChild(ctx, "omm_spat_block_v2", 0, 100 * t_sp, 0, reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse())
+                if is_visible then
+                    reaper.ImGui_PushItemWidth(ctx, 80)
+                    
+                    local x_chg, new_x = reaper.ImGui_DragInt(ctx, "X##cx", math.floor(sel_comp.x or 0), 1, 0, 2000)
+                    if x_chg then sel_comp.x = new_x end
                     if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
                     
-                    reaper.ImGui_SameLine(ctx, 0, 20); local h_chg, new_h = reaper.ImGui_DragInt(ctx, "H##ch", math.floor(sel_comp.h or 20), 1, 10, 500)
-                    if h_chg then sel_comp.h = new_h end
+                    reaper.ImGui_SameLine(ctx, 0, 20)
+                    local y_chg, new_y = reaper.ImGui_DragInt(ctx, "Y##cy", math.floor(sel_comp.y or 0), 1, 0, 2000)
+                    if y_chg then sel_comp.y = new_y end
                     if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
+                    
+                    if sel_comp.type == "AuraKnob" then
+                        reaper.ImGui_Spacing(ctx); local r_chg, new_r = reaper.ImGui_DragInt(ctx, "Rad##crad", math.floor(sel_comp.radius or 16), 1, 5, 100)
+                        if r_chg then sel_comp.radius = new_r end
+                        if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
+                    else
+                        reaper.ImGui_Spacing(ctx); local w_chg, new_w = reaper.ImGui_DragInt(ctx, "W##cw", math.floor(sel_comp.w or 60), 1, 10, 500)
+                        if w_chg then sel_comp.w = new_w end
+                        if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
+                        
+                        reaper.ImGui_SameLine(ctx, 0, 20); local h_chg, new_h = reaper.ImGui_DragInt(ctx, "H##ch", math.floor(sel_comp.h or 20), 1, 10, 500)
+                        if h_chg then sel_comp.h = new_h end
+                        if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then UI.PushUndoState() end
+                    end
+                    
+                    reaper.ImGui_PopItemWidth(ctx)
                 end
-                reaper.ImGui_PopItemWidth(ctx); reaper.ImGui_PopStyleVar(ctx, 1); reaper.ImGui_EndChild(ctx)
+                reaper.ImGui_EndChild(ctx)
+                reaper.ImGui_PopStyleVar(ctx, 1)
             end
             reaper.ImGui_PopStyleVar(ctx, 1); reaper.ImGui_PopStyleColor(ctx, 1); reaper.ImGui_Spacing(ctx)
             
@@ -1949,10 +2307,23 @@ function UI.DrawWorkbenchWindow(ctx, env)
         
         -- CRITICAL FIX: Close the main "props_pane" child window!
         reaper.ImGui_EndChild(ctx)
+
+        -- CRITICAL FIX 2: Move the Toolbar Anchor INSIDE the visibility block 
+        -- and use the Single Source of Truth (top_wx, top_wy) established at frame start.
+        local ok_size, ww, wh = pcall(reaper.ImGui_GetWindowSize, ctx)
+        if ok_size then
+            local right_pane_w = 280
+            local c_x = top_wx
+            local c_y = top_wy + header_h
+            local c_w = math.max(10, ww - right_pane_w)
+            local c_h = math.max(10, wh - header_h)
+            
+            UI.DrawLayerToolbar(ctx, dl_main, c_x, c_y, c_w, c_h)
+        end
     end
-    
+
     reaper.ImGui_End(ctx) 
-    reaper.ImGui_PopStyleVar(ctx, 2); reaper.ImGui_PopStyleColor(ctx, 2)
+    pcall(reaper.ImGui_PopStyleVar, ctx, 2); pcall(reaper.ImGui_PopStyleColor, ctx, 2)
 end
 
 -- ==============================================================================
@@ -1985,7 +2356,7 @@ end
 function UI.DrawAttenuverterSlider(ctx, label, val, x, y, w, h, col_track, col_handle, draw_list, alpha_mult)
     local safe_w = math.max(10, tonumber(w) or 20); val = tonumber(val) or 0.5
     reaper.ImGui_SetCursorScreenPos(ctx, x, y); UI.Safe_InvisibleButton(ctx, label, safe_w, h); local changed = false
-    if reaper.ImGui_IsItemActive(ctx) then local mx, my = reaper.ImGui_GetMousePos(ctx); val = math.max(0.0, math.min(1.0, (mx - x) / safe_w)); changed = true end
+    if not UI.edit_mode and reaper.ImGui_IsItemActive(ctx) then local mx, my = reaper.ImGui_GetMousePos(ctx); val = math.max(0.0, math.min(1.0, (mx - x) / safe_w)); changed = true end
     reaper.ImGui_DrawList_AddRectFilled(draw_list, x, y+h/2-2, x+safe_w, y+h/2+2, col_track & 0xFFFFFF00 | math.floor((col_track & 0xFF) * alpha_mult), 2.0)
     local cx, hx = x + (safe_w / 2), x + (val * safe_w)
     reaper.ImGui_DrawList_AddRectFilled(draw_list, math.min(cx, hx), y+h/2-2, math.max(cx, hx), y+h/2+2, (col_handle & 0xFFFFFF00) | math.floor(0x55 * alpha_mult), 2.0)
@@ -2004,7 +2375,7 @@ function UI.DrawAuraKnob(ctx, label, base_val, mod_sum, vis_pos_mod, vis_neg_mod
     reaper.ImGui_SetCursorScreenPos(ctx, x, y)
     UI.Safe_InvisibleButton(ctx, label.."_knob", radius*2, radius*2)
     local changed = false; local dy_out = 0; local is_active = reaper.ImGui_IsItemActive(ctx)
-    if is_active then
+    if not UI.edit_mode and is_active then
         local dx, m_dy = reaper.ImGui_GetMouseDelta(ctx)
         dy_out = m_dy
         if not ignore_internal_drag and m_dy ~= 0 then
@@ -2106,7 +2477,7 @@ function UI.DrawVerticalDragBox(ctx, id_string, display_label, val, v_min, v_max
     reaper.ImGui_SetCursorScreenPos(ctx, x, y); UI.Safe_InvisibleButton(ctx, id_string, w, h); local changed = false
     if reaper.ImGui_IsItemActive(ctx) then 
         local dx, dy = reaper.ImGui_GetMouseDelta(ctx)
-        if dy ~= 0 then val = math.max(v_min, math.min(v_max, val - (dy * (shift_held and ((v_max-v_min)/2000) or ((v_max-v_min)/200))))); changed = true end
+        if dy ~= 0 and not UI.edit_mode then val = math.max(v_min, math.min(v_max, val - (dy * (shift_held and ((v_max-v_min)/2000) or ((v_max-v_min)/200))))); changed = true end
         reaper.ImGui_DrawList_AddRectFilled(draw_list, x, y, x+w, y+h, 0x050505FF | math.floor(0xFF * alpha_mult), 4.0) 
     end
     local txt = display_label .. " " .. math.floor(val)

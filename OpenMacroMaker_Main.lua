@@ -764,9 +764,11 @@ local function loop()
             end 
             
             local shift_held = select(2, pcall(reaper.ImGui_IsKeyDown, ctx, reaper.ImGui_Mod_Shift()))
-            pcall(reaper.ImGui_SetCursorScreenPos, ctx, 0, 0)
+            pcall(reaper.ImGui_SetCursorScreenPos, ctx, p_min_x, p_min_y + 90)
             if reaper.ImGui_SetNextItemAllowOverlap then pcall(reaper.ImGui_SetNextItemAllowOverlap, ctx) end
-            UI.Safe_InvisibleButton(ctx, "##canvas_bg_catcher", avail_w, avail_h)
+            UI.Safe_InvisibleButton(ctx, "##canvas_bg_catcher", avail_w, math.max(1.0, avail_h - 90))
+            -- CRITICAL FIX: Ensure ALL floating UI elements on the canvas can be clicked
+            if reaper.ImGui_SetItemAllowOverlap then pcall(reaper.ImGui_SetItemAllowOverlap, ctx) end
             
             view_alpha = view_alpha + (((current_view == "MATRIX") and 1.0 or 0.0) - view_alpha) * (app_dt * 35.0)
             local n_a, m_a = math.max(0, 1.0 - view_alpha), math.max(0, view_alpha)
@@ -817,6 +819,8 @@ local function loop()
                 p_min_x = p_min_x, p_min_y = p_min_y, scroll_x = scroll_x, scroll_y = scroll_y,
                 mouse_x = mouse_x, mouse_y = mouse_y, app_dt = app_dt, app_time = app_time,
                 eco_mode = eco_mode, act_a = master_alpha, drag_node_id = drag_node_id, is_ui_hovered = is_ui_hovered, edit_mode = UI.edit_mode,
+                filter_layer = UI.filter_layer,
+                locked_layer = UI.locked_layer,
                 shift_held = shift_held, HEADER_H = HEADER_H, COLOR_NODE_BG = COLOR_NODE_BG,
                 COLOR_BORDER = COLOR_BORDER, COLOR_TEXT = COLOR_TEXT, COLOR_TEXT_DIM = COLOR_TEXT_DIM,
                 COLOR_ACCENT = COLOR_ACCENT, COLOR_LFO_BOTTOM = COLOR_LFO_BOTTOM, COLOR_GRID = COLOR_GRID,
@@ -913,26 +917,30 @@ local function loop()
                     local ok_c, vis_c = pcall(reaper.ImGui_BeginChild, ctx, "matrix_rows", mw, mh - 26, 0, reaper.ImGui_WindowFlags_AlwaysVerticalScrollbar())
                     if ok_c and vis_c then
                         local cdl = select(2, pcall(reaper.ImGui_GetWindowDrawList, ctx))
-                        local ok_pos, cx, cy = pcall(reaper.ImGui_GetCursorScreenPos, ctx)
-                        cx, cy = tonumber(cx) or 0, tonumber(cy) or 0
+                        local ok_pos, cx = pcall(reaper.ImGui_GetCursorScreenPos, ctx)
+                        cx = tonumber(cx) or 0
                         
                         local row_h = 36
                         for i = #connections, 1, -1 do
                             local conn = connections[i]
-                            local ry = cy + ((#connections - i) * row_h)
-                            local bg_col = (i % 2 == 0) and 0x11111100 or 0x00000000
-                            pcall(reaper.ImGui_DrawList_AddRectFilled, cdl, cx, ry, cx + mw, ry + row_h, bg_col | math.floor(0x55 * m_a))
+                            local ry_local = (#connections - i) * row_h
+                            pcall(reaper.ImGui_SetCursorPos, ctx, 0, ry_local)
+                            local ok_rpos, rx, ry = pcall(reaper.ImGui_GetCursorScreenPos, ctx)
+                            rx, ry = tonumber(rx) or 0, tonumber(ry) or 0
                             
-                            pcall(reaper.ImGui_SetCursorScreenPos, ctx, cx, ry)
+                            local bg_col = (i % 2 == 0) and 0x11111100 or 0x00000000
+                            pcall(reaper.ImGui_DrawList_AddRectFilled, cdl, rx, ry, rx + mw, ry + row_h, bg_col | math.floor(0x55 * m_a))
+                            
                             UI.Safe_InvisibleButton(ctx, "row_"..i, mw, row_h)
+                            if reaper.ImGui_SetItemAllowOverlap then pcall(reaper.ImGui_SetItemAllowOverlap, ctx) end -- PUNCHES THE HOLE
                             if select(2, pcall(reaper.ImGui_IsItemHovered, ctx)) then
-                                pcall(reaper.ImGui_DrawList_AddRectFilled, cdl, cx, ry, cx + mw, ry + row_h, 0xFFFFFF00 | math.floor(0x0A * m_a))
+                                pcall(reaper.ImGui_DrawList_AddRectFilled, cdl, rx, ry, rx + mw, ry + row_h, 0xFFFFFF00 | math.floor(0x0A * m_a))
                             end
 
                             local src = GetNodeById(conn.from_node)
                             local dst = GetNodeById(conn.to_node)
                             
-                            local sx, sw = cx + cols[1].x, cols[1].w
+                            local sx, sw = rx + cols[1].x, cols[1].w
                             local src_name = src and (string.sub(src.type,1,4).." "..src.id) or "None"
                             pcall(reaper.ImGui_SetCursorScreenPos, ctx, sx, ry + 4)
                             pcall(reaper.ImGui_PushItemWidth, ctx, sw)
@@ -948,16 +956,16 @@ local function loop()
                             end
                             pcall(reaper.ImGui_PopStyleColor, ctx, 1); pcall(reaper.ImGui_PopItemWidth, ctx)
                             
-                            local am_x, am_w = cx + cols[2].x, cols[2].w
+                            local am_x, am_w = rx + cols[2].x, cols[2].w
                             local depth_val = conn.depth or 0.5
                             pcall(reaper.ImGui_SetCursorScreenPos, ctx, am_x, ry + 8)
                             local s_ok, n_val = UI.DrawAttenuverterSlider(ctx, "amt"..i, depth_val, am_x, ry + 13, am_w, 10, COLOR_TRACK_BG, src and src.col or COLOR_ACCENT, cdl, m_a)
                             if s_ok then conn.depth = n_val; needs_save = true end
                             
-                            local pol_x = cx + cols[3].x
+                            local pol_x = rx + cols[3].x
                             if UI.DrawFixedTextToggleNoBorder(ctx, "pol"..i, conn.bipolar and "<->" or "->", conn.bipolar, pol_x, ry + 8, 30, 20, cdl, m_a, app_dt, COLOR_TEXT) then conn.bipolar = not conn.bipolar; needs_save = true end
                             
-                            local dx, dw = cx + cols[4].x, cols[4].w
+                            local dx, dw = rx + cols[4].x, cols[4].w
                             local dst_name = dst and (string.sub(dst.type,1,4).." "..dst.id.." ["..conn.to_port.."]") or "None"
                             pcall(reaper.ImGui_SetCursorScreenPos, ctx, dx, ry + 4)
                             pcall(reaper.ImGui_PushItemWidth, ctx, dw)
@@ -976,7 +984,7 @@ local function loop()
                             end
                             pcall(reaper.ImGui_PopStyleColor, ctx, 1); pcall(reaper.ImGui_PopItemWidth, ctx)
                             
-                            local out_x, out_w = cx + cols[5].x, cols[5].w
+                            local out_x, out_w = rx + cols[5].x, cols[5].w
                             pcall(reaper.ImGui_DrawList_AddRectFilled, cdl, out_x, ry + 13, out_x + out_w, ry + 23, COLOR_TRACK_BG | math.floor(0xFF * m_a), 5.0)
                             if src then
                                 local s_out = src.out_val or 0.0; local eff_depth = (depth_val - 0.5) * 2.0; local cx_center = out_x + (out_w / 2); local bar_col = src.col or COLOR_ACCENT
@@ -991,15 +999,15 @@ local function loop()
                                 end
                             end
                             
-                            local bx = cx + cols[6].x
+                            local bx = rx + cols[6].x
                             if UI.DrawFixedTextToggleNoBorder(ctx, "byp"..i, conn.bypass and "OFF" or "ON", not conn.bypass, bx, ry + 8, 30, 20, cdl, m_a, app_dt, COLOR_TEXT) then conn.bypass = not conn.bypass; needs_save = true end
                             
-                            local del_x = cx + cols[7].x
+                            local del_x = rx + cols[7].x
                             if UI.DrawFixedTextToggleNoBorder(ctx, "del"..i, "X", false, del_x, ry + 8, 20, 20, cdl, m_a, app_dt, COLOR_TEXT) then table.remove(connections, i); needs_save = true end
                         end
                         
-                        local add_y = cy + (#connections * row_h) + 10
-                        pcall(reaper.ImGui_SetCursorScreenPos, ctx, cx + mw/2 - 60, add_y)
+                        local add_vy = (#connections * row_h) + 10
+                        pcall(reaper.ImGui_SetCursorPos, ctx, mw/2 - 60, add_vy)
                         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Button(), 0x333333FF)
                         if select(2, pcall(reaper.ImGui_Button, ctx, "+ Add Assignment", 120, 24)) then table.insert(connections, {from_node = 0, to_node = 0, to_port = "IN", depth = 0.5, bipolar = false, bypass = false}); needs_save = true end
                         pcall(reaper.ImGui_PopStyleColor, ctx, 1)
@@ -1159,6 +1167,8 @@ local function loop()
             p_min_x = 0, p_min_y = 0, scroll_x = 0, scroll_y = 0, 
             mouse_x = mouse_x, mouse_y = mouse_y, app_dt = app_dt, app_time = app_time,
             eco_mode = eco_mode, act_a = 1.0, drag_node_id = nil, is_ui_hovered = false,
+            filter_layer = UI.filter_layer,
+            locked_layer = UI.locked_layer,
             shift_held = select(2, pcall(reaper.ImGui_IsKeyDown, ctx, reaper.ImGui_Mod_Shift())), 
             HEADER_H = HEADER_H, COLOR_NODE_BG = COLOR_NODE_BG,
             COLOR_BORDER = COLOR_BORDER, COLOR_TEXT = COLOR_TEXT, COLOR_TEXT_DIM = COLOR_TEXT_DIM,
@@ -1209,7 +1219,9 @@ local function loop()
             act_a = master_alpha,
             NodeUI = NodeUI,
             Router = Router,
-            edit_mode = UI.edit_mode
+            edit_mode = UI.edit_mode,
+            filter_layer = UI.filter_layer,
+            locked_layer = UI.locked_layer
         }
         UI.DrawWorkbenchWindow(ctx, wb_env)
     end

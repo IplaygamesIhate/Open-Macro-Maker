@@ -657,18 +657,31 @@ function NodeUI.DrawNodeBlock(ctx, dl, n, n_idx, nodes, connections, env, UI, DS
                     local ch = comp.h and (is_lane and (comp.h * 0.8) or comp.h) or nil
 
                     local c_comp = { 
-                        id = n.id..comp.id, x = sc_x + cx, y = sc_y + cy, w = cw, h = ch, radius = crad, align = comp.align, color_token = comp.color_token, label = comp.label, default_val = comp.default_val, norm_to_real = comp.norm_to_real, real_to_norm = comp.real_to_norm, snap_array = comp.snap_array,
+                        id = n.id..comp.id, 
+                        x = sc_x + cx - ((env.p_min_x or 0) + (env.scroll_x or 0)), 
+                        y = sc_y + cy - ((env.p_min_y or 0) + (env.scroll_y or 0)), 
+                        w = cw, h = ch, radius = crad, align = comp.align, color_token = comp.color_token, label = comp.label, default_val = comp.default_val, norm_to_real = comp.norm_to_real, real_to_norm = comp.real_to_norm, snap_array = comp.snap_array,
                         steps = comp.steps, axis = comp.axis, wrap_at = comp.wrap_at, btn_w = comp.btn_w, btn_h = comp.btn_h, labels = comp.labels
                     }
 
-                    -- DEFAULT LAYER FALLBACK
+                    -- 1. Z-Override Fallback
                     local target_layer = comp.z_override
                     if not target_layer then
                         if comp.type == "Text" or comp.type == "BackPanel" then target_layer = 3
                         elseif comp.type == "Dropdown" or comp.type == "Tooltip" then target_layer = 5
                         else target_layer = 4 end
                     end
-                    pcall(reaper.ImGui_DrawList_ChannelsSetCurrent, dl, tonumber(target_layer) or target_layer)
+                    
+                    -- 2. THE FILTER LOGIC (Early Exit)
+                    if env.filter_layer and target_layer ~= env.filter_layer then
+                        goto skip_component
+                    end
+
+                    -- 3. THE LOCK LOGIC (Disable Interaction)
+                    local is_locked = (env.locked_layer and target_layer ~= env.locked_layer)
+                    if is_locked then pcall(reaper.ImGui_BeginDisabled, ctx) end
+
+                    pcall(reaper.ImGui_DrawList_ChannelsSetCurrent, dl or draw_list, target_layer)
 
                     if comp.type == "AuraKnob" then
                         changed, new_norm = UI.DrawComponent_AuraKnob(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state)
@@ -715,6 +728,10 @@ function NodeUI.DrawNodeBlock(ctx, dl, n, n_idx, nodes, connections, env, UI, DS
                         end
                         needs_save = true 
                     end
+
+                    if is_locked then pcall(reaper.ImGui_EndDisabled, ctx) end
+                    
+                    ::skip_component::
                 end
             end
         end
