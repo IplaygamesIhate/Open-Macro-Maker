@@ -171,8 +171,19 @@ function DeviceLane.Draw(ctx, state, UI)
                         head_col = PALETTE.TITANIUM
                     end
                     
-                    local dev_w = is_col and 40 or (n and n.w or 160)
-                    local dev_h = 240
+                    local dev_w, dev_h = 160, 240 -- Default Fallback
+                    if n and n.algo then
+                        -- Pro Code: Query the Source of Truth directly
+                        local schema = state.NodeUI.GetSchema(n.algo)
+                        if schema then
+                            dev_w = (schema.grid_cols or 4) * UI.BASE_GRID
+                            dev_h = (schema.grid_rows or 4) * UI.BASE_GRID
+                        end
+                    end
+                    
+                    if is_col then
+                        dev_w = 40
+                    end
                     local y_offset = 10
                     local dim_factor = is_bypassed and 0.4 or 1.0
                     
@@ -218,7 +229,9 @@ function DeviceLane.Draw(ctx, state, UI)
                     local r_all = reaper.ImGui_DrawFlags_RoundCornersAll and reaper.ImGui_DrawFlags_RoundCornersAll() or 15
                     local r_top = reaper.ImGui_DrawFlags_RoundCornersTop and reaper.ImGui_DrawFlags_RoundCornersTop() or 3
                     local head_flags = is_col and r_all or r_top
-                    pcall(reaper.ImGui_DrawList_AddRectFilled, dl_lane, dev_x, box_y, dev_x + dev_w, box_y + (is_col and dev_h or 28), head_col, 8.0, head_flags)
+                    if is_col or not n then
+                        pcall(reaper.ImGui_DrawList_AddRectFilled, dl_lane, dev_x, box_y, dev_x + dev_w, box_y + (is_col and dev_h or 28), head_col, 8.0, head_flags)
+                    end
                     
                     local led_col = is_bypassed and 0x777777FF or PALETTE.TANGERINE
                     pcall(reaper.ImGui_DrawList_AddCircleFilled, dl_lane, dev_x + (is_col and 20 or 14), box_y + 14, 5, led_col)
@@ -244,9 +257,10 @@ function DeviceLane.Draw(ctx, state, UI)
                             text_y = text_y + (tonumber(ch) or 0) + 2
                         end
                     else
-                        pcall(reaper.ImGui_DrawList_AddText, dl_lane, dev_x + 28, box_y + 6, PALETTE.ONYX, string.sub(clean_name, 1, 16))
+                        local t_col = n and 0xAAAAAAFF or PALETTE.ONYX
+                        pcall(reaper.ImGui_DrawList_AddText, dl_lane, dev_x + 28, box_y + 6, t_col, string.sub(clean_name, 1, 16))
                         local x_btn_x = dev_x + dev_w - 24
-                        pcall(reaper.ImGui_DrawList_AddText, dl_lane, x_btn_x + 5, box_y + 6, PALETTE.ONYX, "X")
+                        pcall(reaper.ImGui_DrawList_AddText, dl_lane, x_btn_x + 5, box_y + 6, t_col, "X")
                         pcall(reaper.ImGui_SetCursorScreenPos, ctx, x_btn_x, box_y + 4)
                         UI.Safe_InvisibleButton(ctx, "del_"..f_i, 20, 20)
                         if select(2, pcall(reaper.ImGui_IsItemClicked, ctx)) then 

@@ -17,6 +17,8 @@ local UI = {
     search_filter = "", config = { defaults = {} },
     camera = { pan_x = 0, pan_y = 0, zoom = 1.0 }, active_tool = "SELECT",
     palette_open = false, palette_height = 250, drag_col_idx = nil,
+    prop_pane_width = 280, -- Added to maintain state across frame reloads
+    BASE_GRID = 40.0,
     notifications = {}, notif_counter = 0, palette_search = "",
     active_palette = { 
         { id=1, hex = 0x00E5FFFF, token = "Primary", gen_index=0, hue_drift=0.0 }, 
@@ -252,8 +254,8 @@ end
 -- ==============================================================================
 -- PREMIUM COMPONENT RENDERERS
 -- ==============================================================================
-function UI.DrawComponent_AuraKnob(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state)
-    local x, y, rad = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y, comp.radius or 16
+function UI.DrawComponent_AuraKnob(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state)
+    local x, y, rad = origin_x + comp.x, origin_y + comp.y, comp.radius or 16
     local active_col = UI.LerpColor(env.palette and env.palette[comp.color_token] or 0x00A5FFFF, 0xFFFFFFFF, p_state.flash)
     local cx, cy = x + rad, y + rad
     local a_min, a_max = math.pi * 0.75, math.pi * 2.25
@@ -344,8 +346,8 @@ function UI.DrawComponent_AuraKnob(ctx, dl, comp, env, state, is_disabled, val_n
     return changed, new_norm
 end
 
-function UI.DrawComponent_InlineDrag(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function UI.DrawComponent_InlineDrag(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h, align = comp.w or 60, comp.h or 20, comp.align or 1 
     local full_str = (type(comp.label) == "function" and comp.label(state) or comp.label) .. " " .. disp_str
     local tw, th = reaper.ImGui_CalcTextSize(ctx, full_str)
@@ -779,6 +781,17 @@ end
 -- ==========================================
 -- THE STANDALONE CAD FACTORY
 -- ==========================================
+
+function UI.PushIDEStyle(ctx)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), 0x14141AFF) -- The crisp Charcoal
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowPadding(), 0, 0)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ChildRounding(), 0)
+end
+
+function UI.PopIDEStyle(ctx)
+    pcall(reaper.ImGui_PopStyleColor, ctx, 1)
+    pcall(reaper.ImGui_PopStyleVar, ctx, 2)
+end
 function UI.DrawWorkbenchWindow(ctx, env)
     if not env.DEV_MODE then return end
 
@@ -927,7 +940,11 @@ function UI.DrawWorkbenchWindow(ctx, env)
                 -- UTILITIES & CONTROLLERS
                 { label = "Controller: Macro Hub", id = 400, type = "MACRO_HUB" },
                 { label = "Utility: Gain Stage", id = 200, type = "GAIN" },
-                { label = "Utility: Beta Sandbox", id = 999, type = "BETA_LAB" }
+                { label = "Utility: Beta Sandbox", id = 999, type = "BETA_LAB" },
+                
+                -- PRO CODE: Expose Routing Nodes to IDE
+                { label = "Routing: Target Node", id = 500, type = "TARGET" },
+                { label = "Routing: MIDI Input", id = 600, type = "MIDI_IN" }
             }
             -- BACKWARD COMPATIBILITY SHIM (Protocol Zero Safe Transition)
             for _, t in ipairs(UI.wb_targets) do
@@ -942,10 +959,20 @@ function UI.DrawWorkbenchWindow(ctx, env)
         end
         local active_target = UI.wb_targets[UI.wb_target_idx]
 
-        -- ==========================================
-        -- PANE 1: BLUEPRINTS & TOOLBOX (GOLDEN RATIO 240px)
-        -- ==========================================
-        reaper.ImGui_BeginChild(ctx, "omm_left_pane", 240, 0, 0, 0)
+        -- ==========================================================
+        -- PRO CODE: HARD-AXIS LAYOUT FRAME
+        -- ==========================================================
+
+        -- 1. LOCK GEOMETRY (Before rendering)
+        local p1_w = 240
+        local p3_w = math.max(280, math.min(360, UI.prop_pane_width or 280))
+        local p2_w = math.max(10, win_w - p1_w - p3_w - 32) -- 32 = gap + 2 borders
+
+        -- 2. APPLY GLOBAL STYLE
+        UI.PushIDEStyle(ctx)
+
+        -- 3. RENDER PANE 1 (TOOLBOX)
+        reaper.ImGui_BeginChild(ctx, "omm_left_pane", p1_w, 0, 0, 0)
         local dl_left = reaper.ImGui_GetWindowDrawList(ctx)
         
         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 12.0)
@@ -1155,17 +1182,15 @@ function UI.DrawWorkbenchWindow(ctx, env)
         end
 
         reaper.ImGui_EndChild(ctx)
-        reaper.ImGui_SameLine(ctx, 0, 16)
+        reaper.ImGui_SameLine(ctx, 0, 8)
 
-        -- ==========================================
-        -- PANE 2: THE INFINITE CENTERED CANVAS
-        -- ==========================================
+        -- 4. RENDER PANE 2 (CANVAS)
         local ok_aw, raw_aw, raw_ah = pcall(reaper.ImGui_GetContentRegionAvail, ctx)
-        local canvas_w = math.max(10.0, (tonumber(raw_aw) or 0) - 280 - 16)
+        local canvas_w = p2_w
         local total_h = tonumber(raw_ah) or 0
         local canvas_h = total_h
 
-        reaper.ImGui_BeginGroup(ctx) -- PROTECTS PANE 3 FROM ALIGNMENT BUGS
+        reaper.ImGui_BeginChild(ctx, "canvas_pane", p2_w, 0, 0, 0)
 
         -- KINEMATIC PALETTE SPRING (Smooth Roll-Down/Up)
         UI.pal_anim_t = UI.pal_anim_t or (UI.palette_open and 1.0 or 0.0)
@@ -1423,8 +1448,9 @@ function UI.DrawWorkbenchWindow(ctx, env)
         
         pcall(reaper.ImGui_SetWindowFontScale, ctx, UI.camera.zoom)
 
-        local ok_av, raw_w, raw_h = pcall(reaper.ImGui_GetContentRegionAvail, ctx)
-        local avail_w, avail_h = tonumber(raw_w) or 0, tonumber(raw_h) or 0
+        -- PRO CODE FIX: Do not re-evaluate window space inside a Group. 
+        -- Lock the internal layout rigidly to the mathematically predetermined canvas_w and canvas_h
+        local avail_w, avail_h = canvas_w, canvas_h
         local cell_size = 40; local grid_w = UI.wb_grid_cols * cell_size; local grid_h = UI.wb_grid_rows * cell_size
         
         local offset_x = math.max(0, (avail_w - grid_w * UI.camera.zoom) / 2)
@@ -1628,20 +1654,17 @@ function UI.DrawWorkbenchWindow(ctx, env)
 
                     pcall(reaper.ImGui_DrawList_ChannelsSetCurrent, dl_ide, target_layer)
 
-                    local changed, new_norm
-                    if c.type == "AuraKnob" then changed, new_norm = UI.DrawComponent_AuraKnob(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst)
-                    elseif c.type == "InlineDrag" then changed, new_norm = UI.DrawComponent_InlineDrag(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst)
-                    elseif c.type == "PeakMeter" then changed, new_norm = UI.DrawComponent_PeakMeter(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst)
-                    elseif c.type == "VuMeter" then changed, new_norm = UI.DrawComponent_VuMeter(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst)
-                    elseif c.type == "TogglePill" then changed, new_norm = UI.DrawComponent_TogglePill(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst)
-                    elseif c.type == "ToggleLever" then changed, new_norm = UI.DrawComponent_ToggleLever(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst)
-                    elseif env.NodeUI then -- Safely call the extracted NodeUI renderers
-                        if c.type == "Fader" then changed, new_norm = env.NodeUI.DrawComponent_Fader(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst, UI)
-                        elseif c.type == "VFDScreen" then changed, new_norm = env.NodeUI.DrawComponent_VFDScreen(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst, UI)
-                        elseif c.type == "Dropdown" then changed, new_norm = env.NodeUI.DrawComponent_Dropdown(ctx, dl_ide, c_mock, env, nil, false, live_val, disp_str, pst, UI)
-                        elseif c.type == "BackPanel" then changed, new_norm = env.NodeUI.DrawComponent_BackPanel(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst, UI)
-                        elseif c.type == "ScrewDecal" then changed, new_norm = env.NodeUI.DrawComponent_ScrewDecal(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst, UI)
-                        elseif c.type == "RadioStrip" then changed, new_norm = env.NodeUI.DrawComponent_RadioStrip(ctx, dl_ide, c_mock, env, nil, false, live_val, "", pst, UI)
+                    -- Replace your massive IDE if/elseif block with this updated block:
+                    local changed, new_norm = false, live_val
+                    local ox, oy = env.p_min_x, env.p_min_y -- The relative origin for the IDE
+                    
+                    if c.type == "AuraKnob" then changed, new_norm = UI.DrawComponent_AuraKnob(ctx, dl_ide, c_mock, ox, oy, env, nil, false, live_val, disp_str, pst)
+                    elseif c.type == "InlineDrag" then changed, new_norm = UI.DrawComponent_InlineDrag(ctx, dl_ide, c_mock, ox, oy, env, nil, false, live_val, disp_str, pst)
+                    elseif env.NodeUI then
+                        -- The IDE uses the NodeUI registry directly!
+                        local mock_renderer = env.NodeUI.Registry[c.type]
+                        if mock_renderer then
+                            changed, new_norm = mock_renderer(ctx, dl_ide, c_mock, ox, oy, env, nil, false, live_val, disp_str, pst, UI)
                         end
                     end
                     
@@ -1827,14 +1850,12 @@ function UI.DrawWorkbenchWindow(ctx, env)
         UI.DrawNotifications(ctx, dl_ide, raw_cx + (canvas_w/2), raw_cy + canvas_h - 20, env.app_dt)
 
         pcall(reaper.ImGui_DrawList_PopClipRect, dl_ide)
-        reaper.ImGui_EndGroup(ctx) -- Ends canvas_pane group
-        reaper.ImGui_EndGroup(ctx) -- ENDS PANE 2 WRAPPER
-        reaper.ImGui_SameLine(ctx, 0, 16)
+        reaper.ImGui_EndGroup(ctx) -- Ends canvas internal group
+        reaper.ImGui_EndChild(ctx) -- ENDS PANE 2 WRAPPER
+        reaper.ImGui_SameLine(ctx, 0, 8)
 
-        -- ==========================================
-        -- PANE 3: THEME MANAGER & DATA BINDING (GOLDEN RATIO 280px)
-        -- ==========================================
-        reaper.ImGui_BeginChild(ctx, "omm_props_pane", 280, 0, 0, 0)
+        -- 5. RENDER PANE 3 (PROPERTIES)
+        reaper.ImGui_BeginChild(ctx, "omm_props_pane", p3_w, 0, 0, 0)
         local dl_right = reaper.ImGui_GetWindowDrawList(ctx)
         
         -- 1. Create a scrolling child window that stops 40 pixels before the bottom
@@ -2308,11 +2329,33 @@ function UI.DrawWorkbenchWindow(ctx, env)
         -- CRITICAL FIX: Close the main "props_pane" child window!
         reaper.ImGui_EndChild(ctx)
 
+        -- 6. PANE 3 RESIZE HANDLE (Invisible Handle + Cursor change)
+        -- PRO CODE FIX: Draw the handle exactly inside the 8px gap (between p2_w + 8 and p2_w + 16).
+        -- If it starts at +16, it overlaps Pane 3's child window, which will eat the hit-test priority.
+        reaper.ImGui_SetCursorScreenPos(ctx, top_wx + p1_w + p2_w + 8, top_wy + 26)
+        UI.Safe_InvisibleButton(ctx, "resize_pane3", 8, avail_main_h)
+        if reaper.ImGui_IsItemHovered(ctx) then reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_ResizeEW()) end
+        if reaper.ImGui_IsItemActive(ctx) and reaper.ImGui_IsMouseDragging(ctx, 0) then
+            local dx, dy = reaper.ImGui_GetMouseDelta(ctx)
+            local current_w = UI.prop_pane_width or 280
+            UI.prop_pane_width = math.max(280, math.min(360, current_w - dx))
+        end
+
+        -- 7. FOREGROUND BORDERS
+        local fg_dl = reaper.ImGui_GetForegroundDrawList(ctx)
+        -- Divider 1 (After Pane 1)
+        reaper.ImGui_DrawList_AddLine(fg_dl, top_wx + p1_w + 4, top_wy + 26, top_wx + p1_w + 4, top_wy + avail_main_h, 0x333333FF, 1.0)
+        -- Divider 2 (After Pane 2)
+        reaper.ImGui_DrawList_AddLine(fg_dl, top_wx + p1_w + p2_w + 12, top_wy + 26, top_wx + p1_w + p2_w + 12, top_wy + avail_main_h, 0x333333FF, 1.0)
+
+        -- Clean up from Style Uniformity
+        UI.PopIDEStyle(ctx)
+
         -- CRITICAL FIX 2: Move the Toolbar Anchor INSIDE the visibility block 
         -- and use the Single Source of Truth (top_wx, top_wy) established at frame start.
         local ok_size, ww, wh = pcall(reaper.ImGui_GetWindowSize, ctx)
         if ok_size then
-            local right_pane_w = 280
+            local right_pane_w = p3_w
             local c_x = top_wx
             local c_y = top_wy + header_h
             local c_w = math.max(10, ww - right_pane_w)
@@ -2489,6 +2532,256 @@ function UI.DrawVerticalDragBox(ctx, id_string, display_label, val, v_min, v_max
         UI.DrawStandardText(draw_list, x + w/2 - tw/2, y + h/2 - th/2, txt, 0xAAAAAAFF, alpha_mult) 
     end
     return changed, val
+end
+
+-- ==========================================================
+-- PRO CODE: STRICT GARBAGE COLLECTION PROTOCOL
+-- ==========================================================
+function UI.DestroyNode(env, node_id)
+    if not env.nodes then return end
+    
+    -- 1. Identify the Target
+    local target_node, n_idx
+    for i, n in ipairs(env.nodes) do
+        if n.id == node_id then target_node = n; n_idx = i; break end
+    end
+    if not target_node then return end
+    
+    -- 2. Purge the Reaper JSFX (The Backend)
+    if target_node.lane_guid and env.Router then
+        local track = env.Router.GetTrackByGUID(target_node.lane_guid)
+        if track then
+            -- Iterate backward to prevent index shifting during deletion
+            for i = reaper.TrackFX_GetCount(track) - 1, 0, -1 do
+                local _, fn = reaper.TrackFX_GetFXName(track, i)
+                if fn:match("OMM") then
+                    local ok, param_val = pcall(reaper.TrackFX_GetParam, track, i, 0)
+                    if ok then
+                        local p_val = math.floor(param_val + 0.5)
+                        -- Match against either the ID or the assigned gmem slot
+                        if p_val == target_node.id or p_val == target_node.gmem_slot then
+                            reaper.TrackFX_Delete(track, i)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- 3. Purge the Connections (The Cables)
+    if env.connections then
+        for i = #env.connections, 1, -1 do
+            local c = env.connections[i]
+            if c.source_id == node_id or c.target_id == node_id then
+                table.remove(env.connections, i)
+            end
+        end
+    end
+    
+    -- 4. Purge the UI State
+    table.remove(env.nodes, n_idx)
+    return true
+end
+
+-- Trash Hub State Machine
+UI.trash_state = { is_open = false, anim_z = 0.0, confirm_clear = false, scroll_offset = 0.0, del_anim = {} }
+
+-- PRO CODE: Sub-Island Geometry & Dual-Clip Scrolling
+function UI.DrawTrashHub(ctx, env, avail_w, center_y, is_matrix_tab)
+    -- 1. TAB LOCK: Instantly abort if we are not in the Matrix tab
+    if not is_matrix_tab then return end
+
+    local fg_dl = reaper.ImGui_GetForegroundDrawList(ctx)
+
+    -- 2. SUB-ISLAND GEOMETRY (The sleek, small pill)
+    local btn_size = 20
+    local padding = 6
+    local island_w = btn_size + (padding * 2)
+    local island_h = btn_size + (padding * 2) -- 32px total height
+
+    -- Anchor 16px from right edge, mathematically centered to the Main Island
+    local island_x = (env.p_min_x or 0) + avail_w - island_w - 16
+    local island_y = center_y - (island_h / 2)
+
+    -- Physics
+    local target_z = UI.trash_state.is_open and 1.0 or 0.0
+    UI.trash_state.anim_z = UI.trash_state.anim_z + (target_z - UI.trash_state.anim_z) * (env.app_dt * 15.0)
+    local anim_z = UI.trash_state.anim_z
+
+    -- Draw Sub-Island Base
+    local base_col = UI.trash_state.is_open and 0x2A2A33FF or 0x1C1C1EFF
+    reaper.ImGui_DrawList_AddRectFilled(fg_dl, island_x, island_y, island_x + island_w, island_y + island_h, base_col, island_h / 2)
+    reaper.ImGui_DrawList_AddRect(fg_dl, island_x, island_y, island_x + island_w, island_y + island_h, 0x333333FF, island_h / 2, 0, 1.0)
+
+    -- Sleek Trash/List Icon
+    local bx, by = island_x + padding, island_y + padding
+    reaper.ImGui_DrawList_AddLine(fg_dl, bx + 3, by + 5, bx + 17, by + 5, 0xAAAAAAFF, 2.0)
+    reaper.ImGui_DrawList_AddLine(fg_dl, bx + 5, by + 10, bx + 15, by + 10, 0xAAAAAAFF, 2.0)
+    reaper.ImGui_DrawList_AddLine(fg_dl, bx + 7, by + 15, bx + 13, by + 15, 0xAAAAAAFF, 2.0)
+
+    -- Button Interaction
+    reaper.ImGui_SetCursorScreenPos(ctx, island_x, island_y)
+    UI.Safe_InvisibleButton(ctx, "trash_island_btn", island_w, island_h)
+    if reaper.ImGui_IsItemClicked(ctx) then
+        UI.trash_state.is_open = not UI.trash_state.is_open
+        UI.trash_state.confirm_clear = false
+    end
+
+    -- 3. THE DROPDOWN PANEL
+    if anim_z > 0.01 then
+        local panel_w = 240
+        local item_h = 24 -- DENSE SPACING
+        local node_count = env.nodes and #env.nodes or 0
+        
+        -- Layout Constraints
+        local header_h = 8
+        local footer_h = 32
+        local list_max_h = 168 -- Allows exactly 7 dense modules before scrolling
+        
+        local total_list_h = node_count * item_h
+        local view_list_h = math.min(total_list_h, list_max_h)
+        if node_count == 0 then view_list_h = item_h end -- Force space for "No Modules" text
+        
+        local max_panel_h = header_h + view_list_h + footer_h
+        local cur_panel_h = max_panel_h * anim_z
+
+        local px = island_x + island_w - panel_w
+        local py = island_y + island_h + 8
+
+        -- CREATE A FOREGROUND CHILD TO STEAL MOUSE FROM MATRIX
+        reaper.ImGui_SetCursorScreenPos(ctx, px, py)
+        local child_flags = reaper.ImGui_WindowFlags_NoBackground() | reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoDecoration()
+        local ok_c, vis_c = pcall(reaper.ImGui_BeginChild, ctx, "trash_dropdown_layer", panel_w, cur_panel_h, 0, child_flags)
+        
+        if vis_c then
+            -- OUTER CLIP RECT: Solves the "Leak" during Unroll Animation
+            reaper.ImGui_PushClipRect(ctx, px, py, px + panel_w, py + cur_panel_h, true)
+    
+            -- Panel Background
+            reaper.ImGui_DrawList_AddRectFilled(fg_dl, px, py, px + panel_w, py + cur_panel_h, 0x0F0F12F5, 8.0)
+            reaper.ImGui_DrawList_AddRect(fg_dl, px, py, px + panel_w, py + cur_panel_h, 0x333333FF, 8.0, 0, 1.0)
+    
+            -- MOUSE TRACKING
+            local ok, mx, my = pcall(reaper.ImGui_GetMousePos, ctx)
+            local mouse_in_panel = ok and (mx >= px and mx <= px + panel_w and my >= py and my <= py + cur_panel_h)
+    
+            -- SCROLL LOGIC
+            if mouse_in_panel and total_list_h > view_list_h then
+                local mw = select(2, pcall(reaper.ImGui_GetMouseWheel, ctx))
+                if mw and mw ~= 0 then
+                    UI.trash_state.scroll_offset = UI.trash_state.scroll_offset - (mw * item_h * 1.5)
+                end
+            end
+            
+            -- Clamp Scroll to precise bounds
+            local max_scroll = math.max(0, total_list_h - view_list_h)
+            UI.trash_state.scroll_offset = math.max(0, math.min(max_scroll, UI.trash_state.scroll_offset))
+    
+            local draw_y = py + header_h
+    
+            if node_count == 0 then
+                reaper.ImGui_DrawList_AddText(fg_dl, px + (panel_w/2) - 35, draw_y + 4, 0x555555FF, "No Modules")
+                draw_y = draw_y + view_list_h
+            else
+                -- INNER CLIP RECT: Restricts the scrolling list from bleeding into Header/Footer
+                reaper.ImGui_PushClipRect(ctx, px, draw_y, px + panel_w, draw_y + view_list_h, true)
+                
+                for i = node_count, 1, -1 do
+                    local n = env.nodes[i]
+                    -- Apply scroll offset to mathematical position
+                    local row_y = draw_y + ((node_count - i) * item_h) - UI.trash_state.scroll_offset
+                    
+                    -- Only Draw/Interact if physically visible in the viewport
+                    if row_y + item_h > draw_y and row_y < draw_y + view_list_h then
+                        local is_hovered = mouse_in_panel and my >= row_y and my <= row_y + item_h
+                        if is_hovered then
+                            reaper.ImGui_DrawList_AddRectFilled(fg_dl, px + 4, row_y, px + panel_w - 4, row_y + item_h, 0xFFFFFF11, 4.0)
+                        end
+                        
+                        local name = (n.type or "MODULE") .. " " .. (n.id or "")
+                        reaper.ImGui_DrawList_AddText(fg_dl, px + 12, row_y + 5, 0xE5E5EAFF, name)
+                        
+                        local del_w = 20
+                        local del_x = px + panel_w - del_w - 8
+                        local del_hover = is_hovered and mx >= del_x and mx <= del_x + del_w
+                        local x_col = del_hover and 0xFF4040FF or 0x666666FF
+                        
+                        reaper.ImGui_DrawList_AddText(fg_dl, del_x + 6, row_y + 5, x_col, "X")
+                        
+                        reaper.ImGui_SetCursorScreenPos(ctx, del_x, row_y + 2)
+                        UI.Safe_InvisibleButton(ctx, "del_btn_"..n.id, del_w, item_h - 4)
+                        if reaper.ImGui_IsItemClicked(ctx) then
+                            UI.DestroyNode(env, n.id)
+                            env.needs_save = true
+                        end
+                    end
+                end
+                
+                reaper.ImGui_PopClipRect(ctx) -- Close Inner Clip
+                draw_y = draw_y + view_list_h
+            end
+    
+            -- Footer Divider
+            reaper.ImGui_DrawList_AddLine(fg_dl, px + 8, draw_y + 4, px + panel_w - 8, draw_y + 4, 0x222222FF, 1.0)
+            
+            -- ========================================================
+            -- FOOTER LAYOUT (You can adjust these numbers)
+            -- ========================================================
+            local footer_y = draw_y + 8 -- Master Y anchor for the buttons
+            local btn_h = 20            -- Height of the YES/NO buttons
+            local btn_w = 55            -- Width of the YES/NO buttons
+            local text_y_offset = 1.5    -- Pushes text down inside the buttons
+            -- ========================================================
+            
+            -- CLEAR ALL LOGIC
+            if not UI.trash_state.confirm_clear then
+                reaper.ImGui_DrawList_AddText(fg_dl, px + (panel_w/2) - 42, footer_y + text_y_offset, 0xFF4040FF, "CLEAR CANVAS")
+                reaper.ImGui_SetCursorScreenPos(ctx, px, footer_y)
+                UI.Safe_InvisibleButton(ctx, "clear_all_btn", panel_w, 24)
+                if reaper.ImGui_IsItemClicked(ctx) and node_count > 0 then
+                    UI.trash_state.confirm_clear = true
+                end
+            else
+                -- NO Button (Left)
+                local no_x = px + 12 -- Adjust this to move NO button left/right
+                reaper.ImGui_DrawList_AddRectFilled(fg_dl, no_x, footer_y, no_x + btn_w, footer_y + btn_h, 0x333333FF, 4.0)
+                reaper.ImGui_DrawList_AddText(fg_dl, no_x + 19, footer_y + text_y_offset, 0xEEEEEEFF, "NO")
+                reaper.ImGui_SetCursorScreenPos(ctx, no_x, footer_y)
+                UI.Safe_InvisibleButton(ctx, "confirm_no", btn_w, btn_h)
+                if reaper.ImGui_IsItemClicked(ctx) then
+                    UI.trash_state.confirm_clear = false
+                end
+                
+                -- Centered "Are you sure?" text
+                reaper.ImGui_DrawList_AddText(fg_dl, px + (panel_w/2) - 37, footer_y + text_y_offset, 0xAAAAAAFF, "Are you sure?")
+                
+                -- YES Button (Right)
+                local yes_x = px + panel_w - btn_w - 12 -- Adjust the '- 12' to move YES button left/right
+                reaper.ImGui_DrawList_AddRectFilled(fg_dl, yes_x, footer_y, yes_x + btn_w, footer_y + btn_h, 0x550000FF, 4.0)
+                reaper.ImGui_DrawList_AddText(fg_dl, yes_x + 17, footer_y + text_y_offset, 0xFF4040FF, "YES")
+                reaper.ImGui_SetCursorScreenPos(ctx, yes_x, footer_y)
+                UI.Safe_InvisibleButton(ctx, "confirm_yes", btn_w, btn_h)
+                if reaper.ImGui_IsItemClicked(ctx) then
+                    for i = node_count, 1, -1 do UI.DestroyNode(env, env.nodes[i].id) end
+                    env.needs_save = true
+                    UI.trash_state.is_open = false
+                    UI.trash_state.confirm_clear = false
+                end
+            end
+    
+            -- OUTER CLIP RECT POP
+            reaper.ImGui_PopClipRect(ctx)
+            reaper.ImGui_EndChild(ctx)
+        end
+
+        -- Auto-close if clicked outside both the island and the panel
+        if select(2, pcall(reaper.ImGui_IsMouseClicked, ctx, 0)) then
+            if ok and not mouse_in_panel and not (mx >= island_x and mx <= island_x + island_w and my >= island_y and my <= island_y + island_h) then
+                UI.trash_state.is_open = false
+                UI.trash_state.confirm_clear = false
+            end
+        end
+    end
 end
 
 return UI

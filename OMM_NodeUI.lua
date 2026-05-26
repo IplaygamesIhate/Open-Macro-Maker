@@ -124,9 +124,8 @@ end
 -- ==========================================================
 -- THE SEGMENTED CLAY STRIP (High-Density)
 -- ==========================================================
-function NodeUI.DrawComponent_RadioStrip(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x = env.p_min_x + env.scroll_x + comp.x
-    local y = env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_RadioStrip(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local steps = comp.steps or 6
     local base_w = comp.btn_w or 32
     local base_h = comp.btn_h or 24
@@ -267,9 +266,8 @@ function NodeUI.LoadSchemaFromFile(algo_id)
         if chunk then
             local success, schema_data = pcall(chunk)
             if success and type(schema_data) == "table" and schema_data.components then
-                -- GLOBAL GRID ENFORCER (Prevents jumping/flickering between modules)
-                schema_data.grid_cols = 12
-                schema_data.grid_rows = 6
+                -- PRO CODE FIX: Removed Global Grid Enforcer. 
+                -- We now trust the IDE's schema_data.grid_cols and grid_rows implicitly.
 
                 -- MIGRATION FALLBACK: Auto-generate routes from legacy param_key
                 for _, comp in ipairs(schema_data.components) do
@@ -289,7 +287,6 @@ function NodeUI.LoadSchemaFromFile(algo_id)
             end
         end
     end
-    -- If no theme exists, clear it to prevent ghost layouts
     NodeUI.SCHEMAS[algo_id] = nil
     NodeUI.PALETTES[algo_id] = nil
     return false
@@ -349,8 +346,8 @@ local function ScaleDB(db_val, mode_exp)
     return (db_val - min_db) / (max_db - min_db)
 end
 
-function NodeUI.DrawComponent_PeakMeter(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_PeakMeter(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h = comp.w or 20, comp.h or 100
     -- Dark Frosted Glass Trough
     reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x+w, y+h, 0x050508FF, 8.0)
@@ -369,8 +366,8 @@ function NodeUI.DrawComponent_PeakMeter(ctx, dl, comp, env, state, is_disabled, 
     return false, val_norm
 end
 
-function NodeUI.DrawComponent_VuMeter(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_VuMeter(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h = comp.w or 100, comp.h or 80
     -- Neo-Analog Faceplate
     reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x+w, y+h, 0x161619FF, 6.0)
@@ -402,8 +399,8 @@ function NodeUI.DrawComponent_VuMeter(ctx, dl, comp, env, state, is_disabled, va
     return false, val_norm
 end
 
-function NodeUI.DrawComponent_TogglePill(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_TogglePill(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h = comp.w or 50, comp.h or 24
     local r = math.min(w,h)/2
     local is_active = val_norm > 0.5
@@ -426,8 +423,8 @@ function NodeUI.DrawComponent_TogglePill(ctx, dl, comp, env, state, is_disabled,
     return changed, new_norm
 end
 
-function NodeUI.DrawComponent_ToggleLever(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_ToggleLever(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h = comp.w or 24, comp.h or 50
     local is_active = val_norm > 0.5
     
@@ -458,8 +455,8 @@ end
 -- EXTRACTED LEGACY COMPONENT RENDERERS
 -- ==========================================
 
-function NodeUI.DrawComponent_BackPanel(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_BackPanel(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h = comp.w or 200, comp.h or 100
     local col = env.palette and env.palette[comp.color_token] or 0x1C1C1EFF
     
@@ -470,8 +467,8 @@ function NodeUI.DrawComponent_BackPanel(ctx, dl, comp, env, state, is_disabled, 
     return false, val_norm
 end
 
-function NodeUI.DrawComponent_ScrewDecal(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_ScrewDecal(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local rad = 5
     local cx, cy = x + rad, y + rad
     
@@ -482,8 +479,8 @@ function NodeUI.DrawComponent_ScrewDecal(ctx, dl, comp, env, state, is_disabled,
     return false, val_norm
 end
 
-function NodeUI.DrawComponent_VFDScreen(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_VFDScreen(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h = comp.w or 100, comp.h or 24
     local col = env.palette and env.palette[comp.color_token] or 0x00E5FFFF
     
@@ -500,8 +497,8 @@ function NodeUI.DrawComponent_VFDScreen(ctx, dl, comp, env, state, is_disabled, 
     return false, val_norm
 end
 
-function NodeUI.DrawComponent_Dropdown(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_Dropdown(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h = comp.w or 120, comp.h or 24
     local col = env.palette and env.palette[comp.color_token] or 0x00E5FFFF
     
@@ -573,8 +570,8 @@ function NodeUI.DrawComponent_Dropdown(ctx, dl, comp, env, state, is_disabled, v
     return changed, new_norm
 end
 
-function NodeUI.DrawComponent_Fader(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state, UI)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
+function NodeUI.DrawComponent_Fader(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state, UI)
+    local x, y = origin_x + comp.x, origin_y + comp.y
     local w, h = comp.w or 40, comp.h or 120
     local col = env.palette and env.palette[comp.color_token] or 0x00E5FFFF
     local cx = x + (w/2)
@@ -650,17 +647,18 @@ function NodeUI.DrawNodeBlock(ctx, dl, n, n_idx, nodes, connections, env, UI, DS
                     local disp_str = comp.get_format and comp.get_format(n, (comp.norm_to_real and comp.norm_to_real(p_state.disp_val, n) or p_state.disp_val)) or tostring(real_val)
                     local changed, new_norm = false, p_state.ghost_norm
 
-                    local cx = is_lane and ((comp.x or 0) * 0.8) or comp.x
-                    local cy = is_lane and ((comp.y or 0) * 0.8) or comp.y
-                    local crad = comp.radius and (is_lane and (comp.radius * 0.8) or comp.radius) or nil
-                    local cw = comp.w and (is_lane and (comp.w * 0.8) or comp.w) or nil
-                    local ch = comp.h and (is_lane and (comp.h * 0.8) or comp.h) or nil
+                    local cx = comp.x or 0
+                    local cy = comp.y or 0
+                    local crad = comp.radius
+                    local cw = comp.w
+                    local ch = comp.h
 
                     -- CRITICAL FIX: Subtract absolute panning offsets to prevent double-scroll detachment
+                    -- PRO CODE: Container-Agnostic Relative Coordinates
                     local c_comp = { 
                         id = n.id..comp.id, 
-                        x = sc_x + cx - ((env.p_min_x or 0) + (env.scroll_x or 0)), 
-                        y = sc_y + cy - ((env.p_min_y or 0) + (env.scroll_y or 0)), 
+                        x = cx, 
+                        y = cy, 
                         w = cw, 
                         h = ch, 
                         radius = crad, 
@@ -698,31 +696,24 @@ function NodeUI.DrawNodeBlock(ctx, dl, n, n_idx, nodes, connections, env, UI, DS
 
                     pcall(reaper.ImGui_DrawList_ChannelsSetCurrent, dl or draw_list, target_layer)
 
-                    if comp.type == "AuraKnob" then
-                        changed, new_norm = UI.DrawComponent_AuraKnob(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state)
-                    elseif comp.type == "InlineDrag" then
-                        changed, new_norm = UI.DrawComponent_InlineDrag(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state)
-                    elseif comp.type == "PeakMeter" then
-                        changed, new_norm = UI.DrawComponent_PeakMeter(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state)
-                    elseif comp.type == "VuMeter" then
-                        changed, new_norm = UI.DrawComponent_VuMeter(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state)
-                    elseif comp.type == "TogglePill" then
-                        changed, new_norm = UI.DrawComponent_TogglePill(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state)
-                    elseif comp.type == "ToggleLever" then
-                        changed, new_norm = UI.DrawComponent_ToggleLever(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state)
-                    elseif comp.type == "Fader" then
-                        changed, new_norm = NodeUI.DrawComponent_Fader(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state, UI)
-                    elseif comp.type == "VFDScreen" then
-                        changed, new_norm = NodeUI.DrawComponent_VFDScreen(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state, UI)
-                    elseif comp.type == "Dropdown" then
-                        changed, new_norm = NodeUI.DrawComponent_Dropdown(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state, UI)
-                    elseif comp.type == "BackPanel" then
-                        changed, new_norm = NodeUI.DrawComponent_BackPanel(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state, UI)
-                    elseif comp.type == "ScrewDecal" then
-                        changed, new_norm = NodeUI.DrawComponent_ScrewDecal(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state, UI)
-                    elseif comp.type == "RadioStrip" then
-                        changed, new_norm = NodeUI.DrawComponent_RadioStrip(ctx, dl, c_comp, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state, UI)
+                    -- ==========================================================
+                    -- PRO CODE: UNIVERSAL COMPONENT CALLER
+                    -- ==========================================================
+                    local renderer = NodeUI.Registry[comp.type]
+                    
+                    -- Fallback for components living in the global UI table
+                    if not renderer and UI then
+                        if comp.type == "AuraKnob" then renderer = UI.DrawComponent_AuraKnob
+                        elseif comp.type == "InlineDrag" then renderer = UI.DrawComponent_InlineDrag end
                     end
+
+                    if renderer then
+                        -- One call rules them all. Zero hacks. Zero global math.
+                        changed, new_norm = renderer(ctx, dl, c_comp, sc_x, sc_y, env, n, is_disabled, p_state.ghost_norm, disp_str, p_state, UI)
+                    else
+                        reaper.ShowConsoleMsg("OMM Error: Missing Component Renderer for Type -> " .. tostring(comp.type) .. "\n")
+                    end
+                    -- ==========================================================
 
                     if changed then 
                         p_state.ghost_norm = new_norm
@@ -782,11 +773,7 @@ function NodeUI.DrawAllNodes(ctx, dl, nodes, connections, env, UI, DSP)
         local _, hw = pcall(reaper.ImGui_CalcTextSize, ctx, header_txt)
         local hx, hy = sc_x + (n.w/2) - ((tonumber(hw) or 0)/2), sc_y + 8
         
-        -- PLAY MODE LOCK: Only draw the drag-hitbox if Edit Mode is active
-        if env.edit_mode then
-            pcall(reaper.ImGui_SetCursorScreenPos, ctx, sc_x, sc_y)
-            UI.Safe_InvisibleButton(ctx, "chassis_hitbox_"..n.id, n.w or 480, n.h or 240)
-        end
+
         
         local h_hover = false
         if env.edit_mode then
@@ -885,31 +872,23 @@ function NodeUI.DrawAllNodes(ctx, dl, nodes, connections, env, UI, DSP)
             if not n.mode_exp then pcall(reaper.ImGui_DrawList_PathStroke, dl, 0xFF6B35FF & 0xFFFFFF00 | math.floor(0xFF * env.act_a), 0, 2.0) end
         end
 
-        -- ==========================================================
-        -- DESIGN MODE DRAG MATH (Locks the Chassis in Play Mode)
-        -- ==========================================================
-        if env.edit_mode then
-            local ok_m, mx, my = pcall(reaper.ImGui_GetMousePos, ctx)
-            mx, my = tonumber(mx) or 0, tonumber(my) or 0
-            local is_clicked = select(2, pcall(reaper.ImGui_IsMouseClicked, ctx, 0))
-            local is_down = select(2, pcall(reaper.ImGui_IsMouseDown, ctx, 0))
-            local in_bounds = (mx >= sc_x and mx <= sc_x + (n.w or 480) and my >= sc_y and my <= sc_y + (n.h or 240))
-            
-            if in_bounds and is_clicked and not env.drag_node_id then
-                env.drag_node_id = n.id
-            end
-            
-            if not is_down and env.drag_node_id == n.id then
-                env.drag_node_id = nil
-            end
-        else
-            -- Force release if user switches to Play Mode while dragging
-            if env.drag_node_id == n.id then env.drag_node_id = nil end
-        end
         pcall(reaper.ImGui_DrawList_ChannelsMerge, dl)
-        -- ==========================================================
     end
     return needs_save, nil
 end
+
+-- PRO CODE: The Universal Component Registry
+NodeUI.Registry = {
+    ["PeakMeter"]    = NodeUI.DrawComponent_PeakMeter,
+    ["VuMeter"]      = NodeUI.DrawComponent_VuMeter,
+    ["TogglePill"]   = NodeUI.DrawComponent_TogglePill,
+    ["ToggleLever"]  = NodeUI.DrawComponent_ToggleLever,
+    ["BackPanel"]    = NodeUI.DrawComponent_BackPanel,
+    ["ScrewDecal"]   = NodeUI.DrawComponent_ScrewDecal,
+    ["VFDScreen"]    = NodeUI.DrawComponent_VFDScreen,
+    ["Dropdown"]     = NodeUI.DrawComponent_Dropdown,
+    ["Fader"]        = NodeUI.DrawComponent_Fader,
+    ["RadioStrip"]   = NodeUI.DrawComponent_RadioStrip
+}
 
 return NodeUI

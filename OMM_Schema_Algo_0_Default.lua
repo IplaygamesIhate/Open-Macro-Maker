@@ -5,6 +5,13 @@ return {
   grid_cols = 12,
   grid_rows = 6,
   seed_hex = 10878975,
+  active_palette = {
+    { id=1, hex=15073279, token='Primary', gen_index=0, hue_drift=0.000000 },
+    { id=2, hex=4285216255, token='Accent', gen_index=0, hue_drift=0.000000 },
+    { id=3, hex=4126537727, token='Text', gen_index=0, hue_drift=0.000000 },
+    { id=4, hex=2391708671, token='Neutral', gen_index=0, hue_drift=0.000000 },
+    { id=5, hex=471604991, token='Base', gen_index=0, hue_drift=0.000000 },
+  },
   components = {
     {
       id = 'err_txt', type = 'TogglePill',

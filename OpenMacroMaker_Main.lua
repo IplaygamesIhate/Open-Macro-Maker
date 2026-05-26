@@ -27,7 +27,7 @@ local COLOR_GRID = 0x444444FF
 local COLOR_ACCENT = 0x00E5FFFF
 local COLOR_LFO_BOTTOM = 0x1A1A1AFF
 local HEADER_H = 24
-local BASE_GRID = 40.0
+local BASE_GRID = UI.BASE_GRID
 
 local workspaces = {{name = "Canvas 1", nodes = {}, connections = {}}}
 local active_ws_idx = 1
@@ -325,11 +325,11 @@ local function ProcessSignalFlow(app_dt, fullbeats, app_time)
     end
 end
 
-local function CreateMacroNode(x, y, guid) node_counter = node_counter + 1; table.insert(nodes, {id=node_counter, lane_guid=guid, type="MACRO", x=x, y=y, target_x=x, target_y=y, w=160, h=160, val=0.0, out_val=0.0, col=0x00E5FFFF, hide=false, bypass=false, flip=false, engine_mode=0, mod_sum=0, vis_pos_mod=0, vis_neg_mod=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, active_conn_idx=1}); needs_save = true; return node_counter end
-local function CreateLFONode(x, y, guid) node_counter = node_counter + 1; local n = {id=node_counter, lane_guid=guid, type="LFO", x=x, y=y, target_x=x, target_y=y, w=560, h=240, sync=true, speed_float=5.0, speed_idx=5, rate_hz=1.0, depth=1.0, phase_offset=0.0, smooth=0.0, delay=0.0, rise=0.0, mode=0, dir=0, preset_idx=0, grid_x=8.0, grid_y=8.0, trip=false, dot=false, draw_mode=0, midi_in=false, midi_trig=0.0, last_midi_trig=0.0, phase=0.0, run_phase=0.0, midi_pulse=0, last_midi_pulse=0, env_active=true, note_on_time=0.0, smoothed_val=0.0, in_val=0.0, out_val=0.0, flip=false, col=0x00E5FFFF, engine_mode=1, dragged_node=-1, dragged_curve_node=-1, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, mseg_nodes=DeepCopy(lfo_presets[1].nodes)}; table.insert(nodes, n); BakeWavetable(n); needs_save = true; return node_counter end
-local function CreateTransferCurveNode(x, y, guid) node_counter = node_counter + 1; local n = {id=node_counter, lane_guid=guid, type="TRANSFER_CURVE", x=x, y=y, target_x=x, target_y=y, w=240, h=240, grid_x=6.0, grid_y=6.0, depth=0.5, expanded=false, in_val=0.0, out_val=0.0, flip=false, col=0xFFE600FF, bipolar=false, active=true, unipolar=true, engine_mode=0, dragged_node=-1, dragged_curve_node=-1, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, mseg_nodes=DeepCopy(curve_presets[1].nodes)}; table.insert(nodes, n); BakeWavetable(n); needs_save = true; return n.id end
-local function CreateTargetNode(x, y, t_i, f_i, p_i, p_n, b_v, guid) node_counter = node_counter + 1; table.insert(nodes, {id=node_counter, lane_guid=guid, type="TARGET", x=x, y=y, target_x=x, target_y=y, w=160, h=160, track_idx=t_i, fx_idx=f_i, param_idx=p_i, param_name=p_n, base_val=b_v, in_val=0.0, out_val=0.0, depth=1.0, col=0xEEEEEEFF, engine_mode=0, mod_sum=0, vis_pos_mod=0, vis_neg_mod=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, active_conn_idx=1}); needs_save = true; return node_counter end
-local function CreateGainNode(x, y, guid) node_counter = node_counter + 1; table.insert(nodes, {id=node_counter, lane_guid=guid, type="GAIN", x=x, y=y, target_x=x, target_y=y, w=160, h=80, val=0.833333, pan=0.5, extended_range=false, track_idx=0, in_val=0.0, depth_in_val=0.0, out_val=0.0, smooth_db=-60.0, col=0x00FF88FF, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, dot_pop_alpha=0.0}); needs_save = true; return node_counter end
+local function CreateMacroNode(x, y, guid) node_counter = node_counter + 1; table.insert(nodes, {id=node_counter, lane_guid=guid, type="MACRO", algo=400, x=x, y=y, target_x=x, target_y=y, val=0.0, out_val=0.0, col=0x00E5FFFF, hide=false, bypass=false, flip=false, engine_mode=0, mod_sum=0, vis_pos_mod=0, vis_neg_mod=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, active_conn_idx=1}); needs_save = true; return node_counter end
+local function CreateLFONode(x, y, guid) node_counter = node_counter + 1; local n = {id=node_counter, lane_guid=guid, type="LFO", algo=100, x=x, y=y, target_x=x, target_y=y, sync=true, speed_float=5.0, speed_idx=5, rate_hz=1.0, depth=1.0, phase_offset=0.0, smooth=0.0, delay=0.0, rise=0.0, mode=0, dir=0, preset_idx=0, grid_x=8.0, grid_y=8.0, trip=false, dot=false, draw_mode=0, midi_in=false, midi_trig=0.0, last_midi_trig=0.0, phase=0.0, run_phase=0.0, midi_pulse=0, last_midi_pulse=0, env_active=true, note_on_time=0.0, smoothed_val=0.0, in_val=0.0, out_val=0.0, flip=false, col=0x00E5FFFF, engine_mode=1, dragged_node=-1, dragged_curve_node=-1, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, mseg_nodes=DeepCopy(lfo_presets[1].nodes)}; table.insert(nodes, n); BakeWavetable(n); needs_save = true; return node_counter end
+local function CreateTransferCurveNode(x, y, guid) node_counter = node_counter + 1; local n = {id=node_counter, lane_guid=guid, type="TRANSFER_CURVE", algo=300, x=x, y=y, target_x=x, target_y=y, grid_x=6.0, grid_y=6.0, depth=0.5, expanded=false, in_val=0.0, out_val=0.0, flip=false, col=0xFFE600FF, bipolar=false, active=true, unipolar=true, engine_mode=0, dragged_node=-1, dragged_curve_node=-1, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, mseg_nodes=DeepCopy(curve_presets[1].nodes)}; table.insert(nodes, n); BakeWavetable(n); needs_save = true; return n.id end
+local function CreateTargetNode(x, y, t_i, f_i, p_i, p_n, b_v, guid) node_counter = node_counter + 1; table.insert(nodes, {id=node_counter, lane_guid=guid, type="TARGET", algo=500, x=x, y=y, target_x=x, target_y=y, track_idx=t_i, fx_idx=f_i, param_idx=p_i, param_name=p_n, base_val=b_v, in_val=0.0, out_val=0.0, depth=1.0, col=0xEEEEEEFF, engine_mode=0, mod_sum=0, vis_pos_mod=0, vis_neg_mod=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, active_conn_idx=1}); needs_save = true; return node_counter end
+local function CreateGainNode(x, y, guid) node_counter = node_counter + 1; table.insert(nodes, {id=node_counter, lane_guid=guid, type="GAIN", algo=200, x=x, y=y, target_x=x, target_y=y, val=0.833333, pan=0.5, extended_range=false, track_idx=0, in_val=0.0, depth_in_val=0.0, out_val=0.0, smooth_db=-60.0, col=0x00FF88FF, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0, dot_pop_alpha=0.0}); needs_save = true; return node_counter end
 
 local function CreateCompressorNode(x, y, guid, variant) 
     node_counter = node_counter + 1
@@ -337,10 +337,9 @@ local function CreateCompressorNode(x, y, guid, variant)
     local new_slot = last_slot + 1
     reaper.gmem_write(39999, new_slot)
 
-    -- CHANGED: 'algo' now defaults strictly to integer 0 (ReaComp), killing the "VCA" string virus.
     local n = {
         id=node_counter, lane_guid=guid, type="COMPRESSOR", algo=variant or 0, x=x, y=y, target_x=x, target_y=y, 
-        w=560, h=240, thresh=0.0, in_drive=0.0, ratio=4.0, attack=5.0, release=50.0, 
+        thresh=0.0, in_drive=0.0, ratio=4.0, attack=5.0, release=50.0, 
         knee=6.0, mix=1.0, mode_rms=false, mode_fb=false, makeup=0.0, col=0x00E5FFFF, bypass=false,
         vis_mode=0, gmem_slot=new_slot
     }
@@ -354,10 +353,7 @@ local function CreateCompressorNode(x, y, guid, variant)
             if reaper.GetTrackGUID(t) == guid then track = t; break end
         end
     end
-    if track and (variant ~= 999) then
-        DSP.EnsureCompressorBridge(jsfx_deploy_cache, track, n)
-    end
-
+    if track and (variant ~= 999) then DSP.EnsureCompressorBridge(jsfx_deploy_cache, track, n) end
     return node_counter 
 end
 
@@ -369,7 +365,7 @@ local function CreateBetaLabNode(x, y, guid)
 
     table.insert(nodes, {
         id=node_counter, lane_guid=guid, type="COMPRESSOR", algo=999, x=x, y=y, target_x=x, target_y=y, 
-        w=560, h=240, thresh=0.0, in_drive=0.0, ratio=4.0, attack=5.0, release=50.0, 
+        thresh=0.0, in_drive=0.0, ratio=4.0, attack=5.0, release=50.0, 
         knee=6.0, mix=1.0, mode_rms=false, mode_fb=false, makeup=0.0, col=0x00E5FFFF, bypass=false,
         vis_mode=0, track_idx=0, val=0.5, pan=0.5, extended_range=false, gmem_slot=new_slot
     })
@@ -415,7 +411,7 @@ local function LoadState()
                 table.insert(workspaces, active_ws)
             elseif active_ws and pts[1] == "MACRO" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
-                table.insert(active_ws.nodes, {id = id, lane_guid = pts[7]=="" and nil or pts[7], type = "MACRO", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, w = 160, h = 160, val = tonumber(pts[5]) or 0.0, col = math.floor(tonumber(pts[6]) or 0x00E5FFFF), hide = false, bypass = false, flip = false, engine_mode = 0, in_val = 0.0, out_val = 0.0, mod_sum = 0, vis_pos_mod = 0, vis_neg_mod = 0, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, active_conn_idx = 1})
+                table.insert(active_ws.nodes, {id = id, lane_guid = pts[7]=="" and nil or pts[7], type = "MACRO", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, val = tonumber(pts[5]) or 0.0, col = math.floor(tonumber(pts[6]) or 0x00E5FFFF), hide = false, bypass = false, flip = false, engine_mode = 0, in_val = 0.0, out_val = 0.0, mod_sum = 0, vis_pos_mod = 0, vis_neg_mod = 0, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, active_conn_idx = 1})
             elseif active_ws and pts[1] == "LFO" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
                 local mseg_arr = {}
@@ -425,7 +421,7 @@ local function LoadState()
                     if #m_parts >= 2 then table.insert(mseg_arr, {x=m_parts[1], y=m_parts[2], curve=m_parts[3] or 0.0}) end 
                 end
                 if #mseg_arr < 2 then mseg_arr = DeepCopy(lfo_presets[1].nodes) end
-                local n_lfo = {id=id, lane_guid = pts[16]=="" and nil or pts[16], type="LFO", x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, w=560, h=240, sync=pts[5]=="true", speed_float=5.0, speed_idx=math.floor(tonumber(pts[6]) or 5), rate_hz=tonumber(pts[7]) or 1.0, mode=math.floor(tonumber(pts[8]) or 0), dir=math.floor(tonumber(pts[9]) or 0), preset_idx=math.floor(tonumber(pts[10]) or 0), grid_x=8.0, grid_y=8.0, col=0x00E5FFFF, flip=false, engine_mode=1, depth=1.0, trip=false, dot=false, midi_in=tonumber(pts[11])==1, phase_offset=tonumber(pts[12]) or 0.0, smooth=tonumber(pts[13]) or 0.0, delay=tonumber(pts[14]) or 0.0, rise=tonumber(pts[15]) or 0.0, phase=0.0, run_phase=0.0, midi_pulse=0, last_midi_pulse=0, env_active=true, note_on_time=0.0, smoothed_val=0.0, in_val=0.0, out_val=0.0, draw_mode=0, mseg_nodes=mseg_arr, dragged_node=-1, dragged_curve_node=-1, midi_trig=0.0, last_midi_trig=0.0, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0}
+                local n_lfo = {id=id, lane_guid = pts[16]=="" and nil or pts[16], type="LFO", x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, sync=pts[5]=="true", speed_float=5.0, speed_idx=math.floor(tonumber(pts[6]) or 5), rate_hz=tonumber(pts[7]) or 1.0, mode=math.floor(tonumber(pts[8]) or 0), dir=math.floor(tonumber(pts[9]) or 0), preset_idx=math.floor(tonumber(pts[10]) or 0), grid_x=8.0, grid_y=8.0, col=0x00E5FFFF, flip=false, engine_mode=1, depth=1.0, trip=false, dot=false, midi_in=tonumber(pts[11])==1, phase_offset=tonumber(pts[12]) or 0.0, smooth=tonumber(pts[13]) or 0.0, delay=tonumber(pts[14]) or 0.0, rise=tonumber(pts[15]) or 0.0, phase=0.0, run_phase=0.0, midi_pulse=0, last_midi_pulse=0, env_active=true, note_on_time=0.0, smoothed_val=0.0, in_val=0.0, out_val=0.0, draw_mode=0, mseg_nodes=mseg_arr, dragged_node=-1, dragged_curve_node=-1, midi_trig=0.0, last_midi_trig=0.0, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0}
                 table.insert(active_ws.nodes, n_lfo); BakeWavetable(n_lfo)
             elseif active_ws and pts[1] == "CURVE" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
@@ -437,7 +433,7 @@ local function LoadState()
                 end
                 if #mseg_arr < 2 then mseg_arr = DeepCopy(curve_presets[1].nodes) end
                 local exp = tonumber(pts[13])==1
-                local n_c = {id=id, lane_guid = pts[16]=="" and nil or pts[16], type="TRANSFER_CURVE", x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, w=exp and 480 or 240, h=240, grid_x=tonumber(pts[5]) or 6, grid_y=tonumber(pts[6]) or 6, col=math.floor(tonumber(pts[7]) or 0xFFE600FF), depth=tonumber(pts[8]) or 0.5, unipolar=tonumber(pts[9])==1, bipolar=tonumber(pts[10])==1, active=tonumber(pts[11])==1, flip=tonumber(pts[12])==1, expanded=exp, engine_mode=math.floor(tonumber(pts[14]) or 0), in_val=0.0, depth_in_val=0.0, out_val=0.0, mseg_nodes=mseg_arr, dragged_node=-1, dragged_curve_node=-1, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0}
+                local n_c = {id=id, lane_guid = pts[16]=="" and nil or pts[16], type="TRANSFER_CURVE", x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, grid_x=tonumber(pts[5]) or 6, grid_y=tonumber(pts[6]) or 6, col=math.floor(tonumber(pts[7]) or 0xFFE600FF), depth=tonumber(pts[8]) or 0.5, unipolar=tonumber(pts[9])==1, bipolar=tonumber(pts[10])==1, active=tonumber(pts[11])==1, flip=tonumber(pts[12])==1, expanded=exp, engine_mode=math.floor(tonumber(pts[14]) or 0), in_val=0.0, depth_in_val=0.0, out_val=0.0, mseg_nodes=mseg_arr, dragged_node=-1, dragged_curve_node=-1, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0}
                 table.insert(active_ws.nodes, n_c); BakeWavetable(n_c)
             elseif active_ws and pts[1] == "COMP" then
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
@@ -453,16 +449,16 @@ local function LoadState()
                     if n_algo == 999 then algo_val = 999
                     else algo_val = n_algo end
                 end
-                table.insert(active_ws.nodes, {id=id, lane_guid = pts[15]=="" and nil or pts[15], type="COMPRESSOR", algo=algo_val, x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, w=560, h=240, thresh=tonumber(pts[5]) or 0.0, in_drive=tonumber(pts[6]) or 0.0, ratio=tonumber(pts[7]) or 4.0, attack=tonumber(pts[8]) or 5.0, release=tonumber(pts[9]) or 50.0, knee=tonumber(pts[10]) or 6.0, mix=tonumber(pts[11]) or 1.0, mode_rms=tonumber(pts[12])==1, mode_fb=tonumber(pts[13])==1, makeup=tonumber(pts[14]) or 0.0, col=0x00E5FFFF, bypass=false, vis_mode=math.floor(tonumber(pts[16]) or 0), gmem_slot=g_slot})
+                table.insert(active_ws.nodes, {id=id, lane_guid = pts[15]=="" and nil or pts[15], type="COMPRESSOR", algo=algo_val, x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, thresh=tonumber(pts[5]) or 0.0, in_drive=tonumber(pts[6]) or 0.0, ratio=tonumber(pts[7]) or 4.0, attack=tonumber(pts[8]) or 5.0, release=tonumber(pts[9]) or 50.0, knee=tonumber(pts[10]) or 6.0, mix=tonumber(pts[11]) or 1.0, mode_rms=tonumber(pts[12])==1, mode_fb=tonumber(pts[13])==1, makeup=tonumber(pts[14]) or 0.0, col=0x00E5FFFF, bypass=false, vis_mode=math.floor(tonumber(pts[16]) or 0), gmem_slot=g_slot})
             elseif active_ws and pts[1] == "TARGET" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
-                table.insert(active_ws.nodes, {id = id, lane_guid = pts[11]=="" and nil or pts[11], type = "TARGET", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, w = 160, h = 160, track_idx = math.floor(tonumber(pts[5]) or 0), fx_idx = math.floor(tonumber(pts[6]) or 0), param_idx = math.floor(tonumber(pts[7]) or 0), param_name = pts[8] or "Param", base_val = tonumber(pts[9]) or 0.0, depth = 1.0, col = math.floor(tonumber(pts[10]) or 0xEEEEEEFF), engine_mode = 0, in_val = 0.0, out_val = 0.0, mod_sum = 0, vis_pos_mod = 0, vis_neg_mod = 0, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, active_conn_idx = 1})
+                table.insert(active_ws.nodes, {id = id, lane_guid = pts[11]=="" and nil or pts[11], type = "TARGET", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, track_idx = math.floor(tonumber(pts[5]) or 0), fx_idx = math.floor(tonumber(pts[6]) or 0), param_idx = math.floor(tonumber(pts[7]) or 0), param_name = pts[8] or "Param", base_val = tonumber(pts[9]) or 0.0, depth = 1.0, col = math.floor(tonumber(pts[10]) or 0xEEEEEEFF), engine_mode = 0, in_val = 0.0, out_val = 0.0, mod_sum = 0, vis_pos_mod = 0, vis_neg_mod = 0, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, active_conn_idx = 1})
             elseif active_ws and pts[1] == "MIDI_IN" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
-                table.insert(active_ws.nodes, {id = id, lane_guid = pts[7]=="" and nil or pts[7], type = "MIDI_IN", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, w = 160, h = 80, midi_channel = math.floor(tonumber(pts[5]) or 1), col = math.floor(tonumber(pts[6]) or 0xFF4000FF), out_val = 0.0, flash_time = 0.0, shadow_spread = 6.0, last_note_on = 0.0})
+                table.insert(active_ws.nodes, {id = id, lane_guid = pts[7]=="" and nil or pts[7], type = "MIDI_IN", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, midi_channel = math.floor(tonumber(pts[5]) or 1), col = math.floor(tonumber(pts[6]) or 0xFF4000FF), out_val = 0.0, flash_time = 0.0, shadow_spread = 6.0, last_note_on = 0.0})
             elseif active_ws and pts[1] == "GAIN" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
-                table.insert(active_ws.nodes, {id = id, lane_guid = pts[9]=="" and nil or pts[9], type = "GAIN", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, w = 160, h = 80, val = tonumber(pts[5]) or 0.833333, pan = tonumber(pts[6]) or 0.5, extended_range = tonumber(pts[7]) == 1, track_idx = math.floor(tonumber(pts[8]) or 0), in_val = 0.0, depth_in_val = 0.0, out_val = 0.0, smooth_db = -60.0, col = 0x00FF88FF, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, dot_pop_alpha = 0.0})
+                table.insert(active_ws.nodes, {id = id, lane_guid = pts[9]=="" and nil or pts[9], type = "GAIN", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, val = tonumber(pts[5]) or 0.833333, pan = tonumber(pts[6]) or 0.5, extended_range = tonumber(pts[7]) == 1, track_idx = math.floor(tonumber(pts[8]) or 0), in_val = 0.0, depth_in_val = 0.0, out_val = 0.0, smooth_db = -60.0, col = 0x00FF88FF, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, dot_pop_alpha = 0.0})
             elseif active_ws and string.find(chunk, ",") then 
                 local cp = {}
                 for c in string.gmatch(chunk, "([^,]+)") do table.insert(cp, c) end
@@ -480,6 +476,11 @@ end
 LoadState()
 
 local function loop()
+    -- CRITICAL FIX: Instantly halts the loop if ImGui is destroyed, preventing all console crashes.
+    if not reaper.ImGui_ValidatePtr(ctx, 'ImGui_Context*') then return end
+    
+    local true_ide_state = UI.edit_mode
+    
     local ok_m, mx, my = pcall(reaper.ImGui_GetMousePos, ctx)
     local mouse_x, mouse_y = tonumber(mx) or 0, tonumber(my) or 0
     
@@ -673,11 +674,15 @@ local function loop()
             for i = #nodes, 1, -1 do 
                 local n = nodes[i]
                 if not n.spawn_logged then n.flash_time = app_time; n.spawn_logged = true; needs_save = true end
-                if n.type == "LFO" then n.w, n.h = 560, 240
-                elseif n.type == "COMPRESSOR" then n.w, n.h = 560, 240
-                elseif n.type == "TRANSFER_CURVE" then n.w, n.h = (n.expanded and 480 or 240), 240
-                elseif n.type == "MIDI_IN" or n.type == "GAIN" then n.w, n.h = 160, 80
-                else n.w, n.h = 160, 160 end
+                
+                -- PRO CODE FIX: Single Source of Truth (SSOT) Size Derivation
+                if not n.algo then
+                    if not n.algo then n.algo = 0 end -- Fallback for legacy nodes
+                end
+
+                local schema = NodeUI.GetSchema(n.algo)
+                n.w = (schema.grid_cols or 4) * UI.BASE_GRID
+                n.h = (schema.grid_rows or 4) * UI.BASE_GRID
                 
                 if drag_node_id == n.id then 
                     n.target_x = (mouse_x - p_min_x - scroll_x) + drag_offset_x
@@ -764,11 +769,6 @@ local function loop()
             end 
             
             local shift_held = select(2, pcall(reaper.ImGui_IsKeyDown, ctx, reaper.ImGui_Mod_Shift()))
-            -- CRITICAL FIX: The 90-pixel guillotine to protect the Header/HUD Z-order
-            pcall(reaper.ImGui_SetCursorScreenPos, ctx, p_min_x, p_min_y + 90)
-            if reaper.ImGui_SetNextItemAllowOverlap then pcall(reaper.ImGui_SetNextItemAllowOverlap, ctx) end
-            UI.Safe_InvisibleButton(ctx, "##canvas_bg_catcher", avail_w, math.max(1.0, avail_h - 90))
-            if reaper.ImGui_SetItemAllowOverlap then pcall(reaper.ImGui_SetItemAllowOverlap, ctx) end
             
             view_alpha = view_alpha + (((current_view == "MATRIX") and 1.0 or 0.0) - view_alpha) * (app_dt * 35.0)
             local n_a, m_a = math.max(0, 1.0 - view_alpha), math.max(0, view_alpha)
@@ -827,8 +827,18 @@ local function loop()
                 COLOR_ZONE_BG = COLOR_ZONE_BG, COLOR_TRACK_BG = COLOR_TRACK_BG, GetNodeById = GetNodeById,
                 BakeWavetable = BakeWavetable, DeepCopy = DeepCopy, mode_names = mode_names,
                 dir_names = dir_names, preset_names = preset_names, lfo_presets = lfo_presets, mseg_speeds = mseg_speeds,
-                DEV_MODE = DEV_MODE, active_dev_module = active_dev_module, palette = palette
+                DEV_MODE = DEV_MODE, active_dev_module = active_dev_module, palette = palette,
+                nodes = nodes, connections = connections, Router = Router
             }
+
+            -- ==============================================================================
+            -- PRO CODE FIX: THE GLOBAL CONTEXT SWITCH (SHADOW STATE ARCHITECTURE)
+            -- ==============================================================================
+            -- Instead of refactoring 50+ components, we temporarily kill the global edit_mode.
+            -- Because `env.edit_mode` already captured the true state, nodes can still be dragged.
+            -- But every legacy component reading `UI.edit_mode` will instantly wake up.
+            true_ide_state = UI.edit_mode
+            UI.edit_mode = false
 
             if n_a > 0.01 and dl then
                 local ns = NodeUI.DrawAllNodes(ctx, dl, nodes, connections, env, UI, DSP)
@@ -931,9 +941,8 @@ local function loop()
                             local bg_col = (i % 2 == 0) and 0x11111100 or 0x00000000
                             pcall(reaper.ImGui_DrawList_AddRectFilled, cdl, rx, ry, rx + mw, ry + row_h, bg_col | math.floor(0x55 * m_a))
                             
-                            UI.Safe_InvisibleButton(ctx, "row_"..i, mw, row_h)
-                            if reaper.ImGui_SetItemAllowOverlap then pcall(reaper.ImGui_SetItemAllowOverlap, ctx) end -- PUNCHES THE HOLE
-                            if select(2, pcall(reaper.ImGui_IsItemHovered, ctx)) then
+                            -- PRO CODE FIX: No ImGui item. Pure coordinate math prevents Z-order poisoning.
+                            if mouse_x >= rx and mouse_x <= rx + mw and mouse_y >= ry and mouse_y <= ry + row_h then
                                 pcall(reaper.ImGui_DrawList_AddRectFilled, cdl, rx, ry, rx + mw, ry + row_h, 0xFFFFFF00 | math.floor(0x0A * m_a))
                             end
 
@@ -1031,47 +1040,70 @@ local function loop()
                 local menu_w, menu_h = 240, 44
                 local menu_x = p_min_x + (avail_w / 2) - (menu_w / 2)
                 local menu_y = p_min_y + 28 + 10
-                pcall(reaper.ImGui_DrawList_AddRectFilled, dl, menu_x, menu_y, menu_x + menu_w, menu_y + menu_h, UI.ApplyAlpha(0x1A1A1AFF, master_alpha), 22.0)
-                pcall(reaper.ImGui_DrawList_AddRectFilled, dl, menu_x + 3, menu_y + 3, menu_x + menu_w - 3, menu_y + menu_h - 3, UI.ApplyAlpha(0x0A0A0AFF, master_alpha), 19.0)
-                pcall(reaper.ImGui_DrawList_AddRect, dl, menu_x, menu_y, menu_x + menu_w, menu_y + menu_h, UI.ApplyAlpha(0x2A2A2AFF, master_alpha), 22.0, 0, 1.0)
-                
-                local bw, bh, by = 110, menu_h - 8, menu_y + 4
-                local target_offset = (current_view == "NODE") and 0 or (menu_w - 8 - bw)
-                local t_anim = math.min(1.0, (app_time - anim_toggle_start_time) / 0.4)
-                local c1, c3 = 1.70158, 2.70158; local t_1 = t_anim - 1; local spring_t = 1 + c3 * (t_1^3) + c1 * (t_1^2)
-                anim_toggle_val = anim_toggle_start_val + (target_offset - anim_toggle_start_val) * spring_t
-                
-                local ax = menu_x + 4 + anim_toggle_val
-                pcall(reaper.ImGui_DrawList_AddRectFilled, dl, ax, by, ax + bw, by + bh, UI.ApplyAlpha(0x1F1F1FFF, master_alpha), 18.0)
-                pcall(reaper.ImGui_DrawList_AddRect, dl, ax, by, ax + bw, by + bh, UI.ApplyAlpha(0x00E5FFFF, master_alpha), 18.0, 0, 1.0)
-                
-                pcall(reaper.ImGui_SetCursorScreenPos, ctx, menu_x + 4, by); UI.Safe_InvisibleButton(ctx, "nn", bw, bh)
-                if select(2, pcall(reaper.ImGui_IsItemActive, ctx)) then pcall(reaper.ImGui_DrawList_AddRectFilled, dl, menu_x+6, by+2, menu_x+2+bw, by+bh-2, UI.ApplyAlpha(0x050505FF, master_alpha), 18.0) end
-                if select(2, pcall(reaper.ImGui_IsItemClicked, ctx)) and current_view ~= "NODE" then current_view = "NODE"; anim_toggle_start_val = anim_toggle_val; anim_toggle_start_time = app_time end
-                local _, ntw, nth = pcall(reaper.ImGui_CalcTextSize, ctx, "NODE"); ntw = tonumber(ntw) or 0; nth = tonumber(nth) or 0
-                UI.DrawSharpGlowingText(dl, menu_x + 4 + bw/2 - ntw/2, by + bh/2 - nth/2, "NODE", (current_view == "NODE") and COLOR_TEXT or COLOR_TEXT_DIM, master_alpha)
-                
-                pcall(reaper.ImGui_SetCursorScreenPos, ctx, menu_x + menu_w - 4 - bw, by); UI.Safe_InvisibleButton(ctx, "nm", bw, bh)
-                if select(2, pcall(reaper.ImGui_IsItemActive, ctx)) then pcall(reaper.ImGui_DrawList_AddRectFilled, dl, menu_x+menu_w-2-bw, by+2, menu_x+menu_w-6, by+bh-2, UI.ApplyAlpha(0x050505FF, master_alpha), 18.0) end
-                if select(2, pcall(reaper.ImGui_IsItemClicked, ctx)) and current_view ~= "MATRIX" then current_view = "MATRIX"; anim_toggle_start_val = anim_toggle_val; anim_toggle_start_time = app_time end
-                local _, mtw, mth = pcall(reaper.ImGui_CalcTextSize, ctx, "MATRIX"); mtw = tonumber(mtw) or 0; mth = tonumber(mth) or 0
-                UI.DrawSharpGlowingText(dl, menu_x + menu_w - 4 - bw + bw/2 - mtw/2, by + bh/2 - mth/2, "MATRIX", (current_view == "MATRIX") and COLOR_TEXT or COLOR_TEXT_DIM, master_alpha)
-                
-                local sub_w, sub_h = 160, 30; local space_left = (menu_x - p_min_x); local sub_x = p_min_x + (space_left / 2) - (sub_w / 2); local sub_y = menu_y + 7
-                pcall(reaper.ImGui_DrawList_AddRectFilled, dl, sub_x, sub_y, sub_x + sub_w, sub_y + sub_h, UI.ApplyAlpha(0x1A1A1AFF, master_alpha * 0.02), 15.0)
-                pcall(reaper.ImGui_DrawList_AddRect, dl, sub_x, sub_y, sub_x + sub_w, sub_y + sub_h, UI.ApplyAlpha(0x2A2A2AFF, master_alpha * 0.02), 15.0, 0, 1.0)
-                local cwn = workspaces[active_ws_idx] and workspaces[active_ws_idx].name or "Canvas 1"
-                local _, ctw, cth = pcall(reaper.ImGui_CalcTextSize, ctx, cwn); ctw = tonumber(ctw) or 0; cth = tonumber(cth) or 0
-                local text_x = sub_x + (sub_w/2) - ctw/2; local text_y = sub_y + (sub_h/2) - cth/2
-                pcall(reaper.ImGui_DrawList_AddText, dl, text_x+1, text_y+1, 0x00000000 | math.floor(0xFF * master_alpha), cwn)
-                UI.DrawStandardText(dl, text_x, text_y, cwn, COLOR_TEXT_DIM, master_alpha)
 
-                pcall(reaper.ImGui_SetCursorScreenPos, ctx, sub_x, sub_y); UI.Safe_InvisibleButton(ctx, "canvas_dropdown_btn", sub_w, sub_h)
-                if select(2, pcall(reaper.ImGui_IsItemClicked, ctx)) then pcall(reaper.ImGui_OpenPopup, ctx, "WH") end
-                if select(2, pcall(reaper.ImGui_IsItemHovered, ctx)) then pcall(reaper.ImGui_SetMouseCursor, ctx, reaper.ImGui_MouseCursor_Hand()) end
+                -- ==============================================================================
+                -- PROTECTED HUD LAYER: Wrapping this in BeginChild forces it above the Nodes
+                -- ==============================================================================
+                pcall(reaper.ImGui_SetCursorScreenPos, ctx, menu_x, menu_y)
+                local hud_vis = select(2, pcall(reaper.ImGui_BeginChild, ctx, "omm_hud_layer", menu_w, menu_h, 0, reaper.ImGui_WindowFlags_NoBackground() | reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoDecoration()))
+                if hud_vis then
+                    local hud_dl = select(2, pcall(reaper.ImGui_GetWindowDrawList, ctx))
+                    pcall(reaper.ImGui_DrawList_AddRectFilled, hud_dl, menu_x, menu_y, menu_x + menu_w, menu_y + menu_h, UI.ApplyAlpha(0x1A1A1AFF, master_alpha), 22.0)
+                    pcall(reaper.ImGui_DrawList_AddRectFilled, hud_dl, menu_x + 3, menu_y + 3, menu_x + menu_w - 3, menu_y + menu_h - 3, UI.ApplyAlpha(0x0A0A0AFF, master_alpha), 19.0)
+                    pcall(reaper.ImGui_DrawList_AddRect, hud_dl, menu_x, menu_y, menu_x + menu_w, menu_y + menu_h, UI.ApplyAlpha(0x2A2A2AFF, master_alpha), 22.0, 0, 1.0)
+                    
+                    local bw, bh, by = 110, menu_h - 8, menu_y + 4
+                    local target_offset = (current_view == "NODE") and 0 or (menu_w - 8 - bw)
+                    local t_anim = math.min(1.0, (app_time - anim_toggle_start_time) / 0.4)
+                    local c1, c3 = 1.70158, 2.70158; local t_1 = t_anim - 1; local spring_t = 1 + c3 * (t_1^3) + c1 * (t_1^2)
+                    anim_toggle_val = anim_toggle_start_val + (target_offset - anim_toggle_start_val) * spring_t
+                    
+                    local ax = menu_x + 4 + anim_toggle_val
+                    pcall(reaper.ImGui_DrawList_AddRectFilled, hud_dl, ax, by, ax + bw, by + bh, UI.ApplyAlpha(0x1F1F1FFF, master_alpha), 18.0)
+                    pcall(reaper.ImGui_DrawList_AddRect, hud_dl, ax, by, ax + bw, by + bh, UI.ApplyAlpha(0x00E5FFFF, master_alpha), 18.0, 0, 1.0)
+                    
+                    pcall(reaper.ImGui_SetCursorScreenPos, ctx, menu_x + 4, by); UI.Safe_InvisibleButton(ctx, "nn", bw, bh)
+                    if select(2, pcall(reaper.ImGui_IsItemActive, ctx)) then pcall(reaper.ImGui_DrawList_AddRectFilled, hud_dl, menu_x+6, by+2, menu_x+2+bw, by+bh-2, UI.ApplyAlpha(0x050505FF, master_alpha), 18.0) end
+                    if select(2, pcall(reaper.ImGui_IsItemClicked, ctx)) and current_view ~= "NODE" then current_view = "NODE"; anim_toggle_start_val = anim_toggle_val; anim_toggle_start_time = app_time end
+                    local _, ntw, nth = pcall(reaper.ImGui_CalcTextSize, ctx, "NODE"); ntw = tonumber(ntw) or 0; nth = tonumber(nth) or 0
+                    UI.DrawSharpGlowingText(hud_dl, menu_x + 4 + bw/2 - ntw/2, by + bh/2 - nth/2, "NODE", (current_view == "NODE") and COLOR_TEXT or COLOR_TEXT_DIM, master_alpha)
+                    
+                    pcall(reaper.ImGui_SetCursorScreenPos, ctx, menu_x + menu_w - 4 - bw, by); UI.Safe_InvisibleButton(ctx, "nm", bw, bh)
+                    if select(2, pcall(reaper.ImGui_IsItemActive, ctx)) then pcall(reaper.ImGui_DrawList_AddRectFilled, hud_dl, menu_x+menu_w-2-bw, by+2, menu_x+menu_w-6, by+bh-2, UI.ApplyAlpha(0x050505FF, master_alpha), 18.0) end
+                    if select(2, pcall(reaper.ImGui_IsItemClicked, ctx)) and current_view ~= "MATRIX" then current_view = "MATRIX"; anim_toggle_start_val = anim_toggle_val; anim_toggle_start_time = app_time end
+                    local _, mtw, mth = pcall(reaper.ImGui_CalcTextSize, ctx, "MATRIX"); mtw = tonumber(mtw) or 0; mth = tonumber(mth) or 0
+                    UI.DrawSharpGlowingText(hud_dl, menu_x + menu_w - 4 - bw + bw/2 - mtw/2, by + bh/2 - mth/2, "MATRIX", (current_view == "MATRIX") and COLOR_TEXT or COLOR_TEXT_DIM, master_alpha)
+                    
+                    pcall(reaper.ImGui_EndChild, ctx)
+                end
                 
+                -- ==============================================================================
+                -- PROTECTED CANVAS DROPDOWN LAYER
+                -- ==============================================================================
+                local sub_w, sub_h = 160, 30; local space_left = (menu_x - p_min_x); local sub_x = p_min_x + (space_left / 2) - (sub_w / 2); local sub_y = menu_y + 7
+                
+                local open_wh_popup = false
+                pcall(reaper.ImGui_SetCursorScreenPos, ctx, sub_x, sub_y)
+                local sub_vis = select(2, pcall(reaper.ImGui_BeginChild, ctx, "omm_sub_layer", sub_w, sub_h, 0, reaper.ImGui_WindowFlags_NoBackground() | reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoDecoration()))
+                if sub_vis then
+                    local sub_dl = select(2, pcall(reaper.ImGui_GetWindowDrawList, ctx))
+                    pcall(reaper.ImGui_DrawList_AddRectFilled, sub_dl, sub_x, sub_y, sub_x + sub_w, sub_y + sub_h, UI.ApplyAlpha(0x1A1A1AFF, master_alpha * 0.02), 15.0)
+                    pcall(reaper.ImGui_DrawList_AddRect, sub_dl, sub_x, sub_y, sub_x + sub_w, sub_y + sub_h, UI.ApplyAlpha(0x2A2A2AFF, master_alpha * 0.02), 15.0, 0, 1.0)
+                    local cwn = workspaces[active_ws_idx] and workspaces[active_ws_idx].name or "Canvas 1"
+                    local _, ctw, cth = pcall(reaper.ImGui_CalcTextSize, ctx, cwn); ctw = tonumber(ctw) or 0; cth = tonumber(cth) or 0
+                    local text_x = sub_x + (sub_w/2) - ctw/2; local text_y = sub_y + (sub_h/2) - cth/2
+                    pcall(reaper.ImGui_DrawList_AddText, sub_dl, text_x+1, text_y+1, 0x00000000 | math.floor(0xFF * master_alpha), cwn)
+                    UI.DrawStandardText(sub_dl, text_x, text_y, cwn, COLOR_TEXT_DIM, master_alpha)
+
+                    pcall(reaper.ImGui_SetCursorScreenPos, ctx, sub_x, sub_y); UI.Safe_InvisibleButton(ctx, "canvas_dropdown_btn", sub_w, sub_h)
+                    if select(2, pcall(reaper.ImGui_IsItemClicked, ctx)) then open_wh_popup = true end
+                    if select(2, pcall(reaper.ImGui_IsItemHovered, ctx)) then pcall(reaper.ImGui_SetMouseCursor, ctx, reaper.ImGui_MouseCursor_Hand()) end
+                    pcall(reaper.ImGui_EndChild, ctx)
+                end
+                
+                if open_wh_popup then pcall(reaper.ImGui_OpenPopup, ctx, "WH") end
                 local pop_h_target = math.min(avail_h * 0.7, (#workspaces * 135) + 60)
-                pcall(reaper.ImGui_SetNextWindowPos, ctx, sx + (sw/2) - 110, s_y + sh + 10)
+                pcall(reaper.ImGui_SetNextWindowPos, ctx, sub_x + (sub_w/2) - 110, sub_y + sub_h + 10)
                 pcall(reaper.ImGui_SetNextWindowSize, ctx, 220, pop_h_target)
                 pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_PopupBg(), 0x00000000)
                 pcall(reaper.ImGui_PushStyleVar, ctx, reaper.ImGui_StyleVar_WindowPadding(), 0.0, 0.0) 
@@ -1149,6 +1181,37 @@ local function loop()
                 pcall(reaper.ImGui_PopStyleVar, ctx, 1); pcall(reaper.ImGui_PopStyleColor, ctx, 1)
             end
         end
+        
+        -- ==========================================================
+        -- TRASH HUB EXECUTION (Scope Fix)
+        -- ==========================================================
+        if UI and UI.DrawTrashHub then
+            local ok_pos, wx, wy = pcall(reaper.ImGui_GetWindowPos, ctx)
+            local ok_size, ww, wh = pcall(reaper.ImGui_GetWindowSize, ctx)
+
+            if ok_pos and ok_size then
+                local trash_env = {
+                    p_min_x = wx,
+                    p_min_y = wy,
+                    nodes = nodes,
+                    connections = connections,
+                    Router = Router,
+                    app_dt = app_dt or 0.016
+                }
+                
+                -- Center precisely on the NODE/MATRIX tabs (menu_y = wy + 38, menu_h = 44)
+                -- Center of tabs is wy + 38 + 22 = wy + 60
+                local center_y = wy + 60 
+                local is_matrix_tab = (current_view == "MATRIX")
+                
+                local ok, _ = pcall(UI.DrawTrashHub, ctx, trash_env, ww, center_y, is_matrix_tab)
+                if ok and trash_env.needs_save then
+                    needs_save = true
+                end
+            end
+        end
+        -- ==========================================================
+        
         pcall(reaper.ImGui_End, ctx)
         pcall(reaper.ImGui_PopStyleColor, ctx, 1); pcall(reaper.ImGui_PopStyleVar, ctx, 1)
     end
@@ -1207,9 +1270,15 @@ local function loop()
         DEV_MODE = dev_state.env.DEV_MODE
     end
 
+    -- TRASH HUB EXECUTION moved up to prevent Context Death
+
     -- ==========================================
     -- STANDALONE DEVELOPMENT INSPECTOR RUN TIME
     -- ==========================================
+    
+    -- Restore the global state so the IDE Design Mode locks components properly
+    UI.edit_mode = true_ide_state
+    
     if DEV_MODE then
         local wb_env = {
             DEV_MODE = DEV_MODE,
