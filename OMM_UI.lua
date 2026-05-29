@@ -15,7 +15,8 @@ local UI = {
     snap_radius=8, break_tension=24,
     theme_manager = { current_theme = "Default", new_theme_name = "", is_creating = false, list = {} },
     search_filter = "", config = { defaults = {} },
-    camera = { pan_x = 0, pan_y = 0, zoom = 1.0 }, active_tool = "SELECT",
+    camera = { pan_x = 0, pan_y = 0, zoom = 1.0 },
+    ide_camera = { pan_x = 0, pan_y = 0, zoom = 1.0 }, active_tool = "SELECT",
     palette_open = false, palette_height = 250, drag_col_idx = nil,
     prop_pane_width = 280, -- Added to maintain state across frame reloads
     BASE_GRID = 40.0,
@@ -26,8 +27,59 @@ local UI = {
         { id=3, hex = 0xF5F5F7FF, token = "Text", gen_index=0, hue_drift=0.0 },
         { id=4, hex = 0x8E8E93FF, token = "Neutral", gen_index=0, hue_drift=0.0 },
         { id=5, hex = 0x1C1C1EFF, token = "Base", gen_index=0, hue_drift=0.0 }
+    },
+    canvas_physics = {
+        target_scale = 1.0, current_scale = 1.0, min_scale = 0.50, max_scale = 2.00,
+        lerp_speed = 18.0, is_zooming = false, anchor_world_x = 0, anchor_world_y = 0
+    },
+    ide_physics = {
+        target_scale = 1.0, current_scale = 1.0, min_scale = 0.50, max_scale = 4.00,
+        lerp_speed = 18.0, is_zooming = false, anchor_world_x = 0, anchor_world_y = 0, anchor_mx = 0, anchor_my = 0
     }
 }
+
+-- ==============================================================================
+-- PRO CODE: DOMAIN SCALE REGISTRY & FONT ATLAS
+-- ==============================================================================
+UI.ScaleRegistry = {
+    -- The Immutable Fixed Steps (Min 50% to Max 200%)
+    steps = { 0.50, 0.75, 0.90, 1.0, 1.10, 1.25, 1.50 },
+    
+    -- Independent Domain Tracking (Storing the Index, Default is 4 -> 1.0x)
+    DeviceLane_Idx = 4,
+    IDE_Idx = 4,
+    
+    -- The Canvas uses continuous oversampling, so it tracks the raw float
+    Canvas_Scale = 1.0, 
+    
+    -- GPU Memory Pointers
+    Fonts = {},         -- Holds the Fixed-Step fonts
+    Canvas_Font = nil,  -- Holds the massive 200% font for downscaling
+    is_initialized = false
+}
+
+function UI.InitFontAtlas(ctx)
+    if UI.ScaleRegistry.is_initialized then return end
+
+    local base_size = 14
+    local font_name = 'sans-serif'
+
+    -- 1. Bake the Fixed-Step Fonts for the Device Lane & IDE
+    for i, scale in ipairs(UI.ScaleRegistry.steps) do
+        local size = math.floor((base_size * scale) + 0.5)
+        local f = reaper.ImGui_CreateFont(font_name, size)
+        reaper.ImGui_Attach(ctx, f)
+        UI.ScaleRegistry.Fonts[i] = f
+    end
+
+    -- 2. Bake the Massive Font for Canvas Oversampling (Using 200% = 28px)
+    local oversample_size = math.floor((base_size * 2.0) + 0.5)
+    UI.ScaleRegistry.Canvas_Font = reaper.ImGui_CreateFont(font_name, oversample_size)
+    reaper.ImGui_Attach(ctx, UI.ScaleRegistry.Canvas_Font)
+
+    UI.ScaleRegistry.is_initialized = true
+end
+-- ==============================================================================
 
 local function LoadOSConfig()
     local fpath = (debug.getinfo(1, "S").source:match("@?(.*[\\/])") or "") .. "OMM_Config.lua"
@@ -182,10 +234,25 @@ function UI.DrawModeToggle(ctx, dl, x, y, act_a)
     return ok
 end
 
-function UI.DrawStandardText(draw_list, x, y, text, col, alpha_mult)
+-- ==========================================================
+-- PRO CODE: KINEMATIC TEXT RENDERER (IDE Legacy Safe)
+-- ==========================================================
+function UI.DrawStandardText(draw_list, x, y, text, col, alpha_mult, opt_font, opt_size)
     local a = tonumber(alpha_mult) or 1.0
-    reaper.ImGui_DrawList_AddText(draw_list, x+1, y+1, 0x00000000 | math.floor(0xFF*a), tostring(text))
-    reaper.ImGui_DrawList_AddText(draw_list, x, y, (col & 0xFFFFFF00) | math.floor((col & 0xFF)*a), tostring(text))
+    
+    -- PRO FIX: Subpixel Immune Floor Anchor
+    local fx = math.floor(x + 0.5)
+    local fy = math.floor(y + 0.5)
+    
+    if opt_font and opt_size then
+        -- 1. ZOOMED CANVAS ROUTE: Uses AddTextEx for absolute 200% oversampled clarity.
+        reaper.ImGui_DrawList_AddTextEx(draw_list, opt_font, opt_size, fx+1, fy+1, 0x00000000 | math.floor(0xFF*a), tostring(text))
+        reaper.ImGui_DrawList_AddTextEx(draw_list, opt_font, opt_size, fx, fy, (col & 0xFFFFFF00) | math.floor((col & 0xFF)*a), tostring(text))
+    else
+        -- 2. STATIC UI ROUTE: Safely falls back to native AddText for sidebars and toolbars.
+        reaper.ImGui_DrawList_AddText(draw_list, fx+1, fy+1, 0x00000000 | math.floor(0xFF*a), tostring(text))
+        reaper.ImGui_DrawList_AddText(draw_list, fx, fy, (col & 0xFFFFFF00) | math.floor((col & 0xFF)*a), tostring(text))
+    end
 end
 
 function UI.DrawAnimatedDisclosure(ctx, dl, id, label, is_open, dt, w)
@@ -249,194 +316,6 @@ function UI.DrawVectorIcon(ctx, dl, id, icon_type, is_active)
         reaper.ImGui_DrawList_AddLine(dl, cx+16, cy+16, cx+22, cy+22, col, 2.0)
     end
     return clicked
-end
-
--- ==============================================================================
--- PREMIUM COMPONENT RENDERERS
--- ==============================================================================
-function UI.DrawComponent_AuraKnob(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state)
-    local x, y, rad = origin_x + comp.x, origin_y + comp.y, comp.radius or 16
-    local active_col = UI.LerpColor(env.palette and env.palette[comp.color_token] or 0x00A5FFFF, 0xFFFFFFFF, p_state.flash)
-    local cx, cy = x + rad, y + rad
-    local a_min, a_max = math.pi * 0.75, math.pi * 2.25
-    local a_val = a_min + (a_max - a_min) * p_state.disp_val
-    
-    -- Extract Macro Depth (Targets Route #1 if available)
-    local has_depth = comp.routes and comp.routes[1]
-    local depth_val = has_depth and comp.routes[1].depth or 0.0
-    local is_bipolar = comp.is_bipolar or false
-
-    -- Dual-Zone Interaction Engine
-    reaper.ImGui_SetCursorScreenPos(ctx, x, y)
-    UI.Safe_InvisibleButton(ctx, comp.id.."_knob", rad*2, rad*2)
-    local changed, new_norm = false, val_norm
-    local hov = reaper.ImGui_IsItemHovered(ctx)
-    local is_active = reaper.ImGui_IsItemActive(ctx)
-    
-    -- Double Click Bipolar Toggle
-    if UI.edit_mode and hov and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
-        comp.is_bipolar = not comp.is_bipolar
-        changed = true; p_state.flash = 1.0
-    end
-
-    if is_active and not is_disabled then
-        local ok, dx, dy = pcall(reaper.ImGui_GetMouseDelta, ctx)
-        if ok and tonumber(dy) and dy ~= 0 then
-            local mx, my = reaper.ImGui_GetMousePos(ctx)
-            local dist = math.sqrt((mx - cx)^2 + (my - cy)^2)
-            local ok_mods, mods = pcall(reaper.ImGui_GetKeyMods, ctx)
-            local shift = ok_mods and (mods & (reaper.ImGui_Mod_Shift and reaper.ImGui_Mod_Shift() or 1)) ~= 0
-            local speed = shift and 0.0005 or 0.003
-            
-            -- If grabbed outside the inner radius, adjust Depth instead of Value!
-            if dist > (rad * 0.6) and has_depth and UI.edit_mode then
-                comp.routes[1].depth = math.max(-1.0, math.min(1.0, depth_val - (dy * speed * 2.0)))
-                changed = true; p_state.flash = 1.0
-            elseif not UI.edit_mode then
-                new_norm = math.max(0.0, math.min(1.0, val_norm - (dy * speed)))
-                changed = true
-            end
-        end
-    end
-
-    -- Volumetric Shadow
-    reaper.ImGui_DrawList_AddCircleFilled(dl, cx, cy + 4, rad, 0x00000044 | math.floor(0xFF * env.act_a))
-    
-    -- Base Track
-    reaper.ImGui_DrawList_PathArcTo(dl, cx, cy, rad, a_min, a_max, 0); reaper.ImGui_DrawList_PathStroke(dl, 0x05050500 | math.floor(0xFF * env.act_a), 0, 4.0)
-    
-    -- Depth Ring Visualization (The Pro Feature)
-    if has_depth and math.abs(depth_val) > 0.01 then
-        local t_max, t_min = p_state.disp_val + depth_val, p_state.disp_val
-        if is_bipolar then
-            t_max = p_state.disp_val + math.abs(depth_val)
-            t_min = p_state.disp_val - math.abs(depth_val)
-        elseif depth_val < 0 then
-            t_max, t_min = p_state.disp_val, p_state.disp_val + depth_val
-        end
-        t_max, t_min = math.max(0.0, math.min(1.0, t_max)), math.max(0.0, math.min(1.0, t_min))
-        
-        local a_lim_max = a_min + (t_max * 1.5 * math.pi)
-        local a_lim_min = a_min + (t_min * 1.5 * math.pi)
-        if math.abs(a_lim_max - a_lim_min) > 0.01 then
-            reaper.ImGui_DrawList_PathArcTo(dl, cx, cy, rad, math.min(a_lim_min, a_lim_max), math.max(a_lim_min, a_lim_max), 0)
-            reaper.ImGui_DrawList_PathStroke(dl, (active_col & 0xFFFFFF00) | math.floor(255 * 0.35 * env.act_a), 0, 4.0)
-        end
-    end
-    
-    -- Value Core Arc
-    local draw_st, draw_en = a_min, a_val
-    if draw_en - draw_st > 0.01 then
-        reaper.ImGui_DrawList_PathArcTo(dl, cx, cy, rad, draw_st, draw_en, 0)
-        reaper.ImGui_DrawList_PathStroke(dl, active_col & 0xFFFFFF00 | math.floor(0xAA * env.act_a), 0, 3.0)
-    end
-    
-    -- Inner Cap
-    local cap_bg = is_active and 0x08080800 or 0x1A1A1E00
-    reaper.ImGui_DrawList_AddCircleFilled(dl, cx, cy, rad-4, cap_bg | math.floor(0xFF * env.act_a))
-    
-    -- Needle
-    local lx, ly = cx + math.cos(a_val) * (rad - 1), cy + math.sin(a_val) * (rad - 1)
-    reaper.ImGui_DrawList_AddLine(dl, cx, cy, lx, ly, 0x1C1C1EFF & 0xFFFFFF00 | math.floor(0xFF * env.act_a), 2.0)
-    
-    -- Labels
-    local tw, th = reaper.ImGui_CalcTextSize(ctx, comp.label); reaper.ImGui_DrawList_AddText(dl, cx - tw/2, cy - rad - 20, 0x8E8E93FF & 0xFFFFFF00 | math.floor(0xFF * env.act_a), comp.label)
-    local vw, vh = reaper.ImGui_CalcTextSize(ctx, disp_str); reaper.ImGui_DrawList_AddText(dl, cx - vw/2, cy + rad + 6, active_col & 0xFFFFFF00 | math.floor(0xFF * env.act_a), disp_str)
-    
-    return changed, new_norm
-end
-
-function UI.DrawComponent_InlineDrag(ctx, dl, comp, origin_x, origin_y, env, state, is_disabled, val_norm, disp_str, p_state)
-    local x, y = origin_x + comp.x, origin_y + comp.y
-    local w, h, align = comp.w or 60, comp.h or 20, comp.align or 1 
-    local full_str = (type(comp.label) == "function" and comp.label(state) or comp.label) .. " " .. disp_str
-    local tw, th = reaper.ImGui_CalcTextSize(ctx, full_str)
-    local tx = (align == 0) and x + 4 or ((align == 1) and x + (w/2) - (tw/2) or x + w - tw - 4)
-    reaper.ImGui_DrawList_AddText(dl, tx, y + (h/2) - (th/2), UI.LerpColor(0x005F73FF, 0xFFFFFFFF, p_state.flash) & 0xFFFFFF00 | math.floor(0xFF * env.act_a), full_str)
-    return false, val_norm
-end
-
-function UI.DrawComponent_PeakMeter(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
-    local w, h = comp.w or 20, comp.h or 100
-    local active_a = math.floor(0xFF * env.act_a)
-    reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x+w, y+h, 0x050508FF, 12.0)
-    reaper.ImGui_DrawList_AddRect(dl, x, y, x+w, y+h, 0x1A1A1FFF & 0xFFFFFF00 | active_a, 12.0, 0, 1.5)
-    local fill_h = h * p_state.disp_val
-    if fill_h > 2 then
-        local c_fill = UI.LerpColor(0x00E5FFFF, 0xFF3333FF, p_state.disp_val)
-        reaper.ImGui_DrawList_AddRectFilled(dl, x+2, y + h - fill_h + 2, x+w-2, y+h-2, c_fill & 0xFFFFFF00 | active_a, 6.0)
-        if p_state.disp_val > 0.8 then reaper.ImGui_DrawList_AddCircleFilled(dl, x+w/2, y + h - fill_h, w, c_fill & 0xFFFFFF00 | math.floor(0x44 * env.act_a)) end
-    end
-    return false, val_norm
-end
-
-function UI.DrawComponent_VuMeter(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
-    local w, h = comp.w or 100, comp.h or 80
-    local active_a = math.floor(0xFF * env.act_a)
-    reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x+w, y+h, 0x161619FF, 6.0)
-    reaper.ImGui_DrawList_AddRect(dl, x, y, x+w, y+h, 0x2A2A33FF, 6.0, 0, 1.0)
-    
-    local pivot_x, pivot_y = x + w/2, y + h * 1.15
-    local radius = h * 0.9
-    local a_min, a_max = math.pi * 1.25, math.pi * 1.75
-    
-    reaper.ImGui_DrawList_PathArcTo(dl, pivot_x, pivot_y, radius, a_min, a_max, 0)
-    reaper.ImGui_DrawList_PathStroke(dl, 0x8E8E93FF & 0xFFFFFF00 | active_a, 0, 2.0)
-    
-    for i = 0, 5 do
-        local t_a = a_min + (a_max - a_min) * (i / 5.0)
-        local tx1, ty1 = pivot_x + math.cos(t_a) * radius, pivot_y + math.sin(t_a) * radius
-        local tx2, ty2 = pivot_x + math.cos(t_a) * (radius - 8), pivot_y + math.sin(t_a) * (radius - 8)
-        reaper.ImGui_DrawList_AddLine(dl, tx1, ty1, tx2, ty2, 0x8E8E93FF & 0xFFFFFF00 | active_a, 1.5)
-    end
-    
-    local a_val = a_min + (a_max - a_min) * p_state.disp_val
-    local n_x, n_y = pivot_x + math.cos(a_val) * (radius + 4), pivot_y + math.sin(a_val) * (radius + 4)
-    reaper.ImGui_DrawList_AddLine(dl, pivot_x, pivot_y, n_x, n_y, 0xFF3333FF & 0xFFFFFF00 | active_a, 2.0)
-    
-    if p_state.disp_val > 0.8 then reaper.ImGui_DrawList_AddCircleFilled(dl, n_x, n_y, 12, 0xFF333300 | math.floor(0x44 * env.act_a)) end
-    return false, val_norm
-end
-
-function UI.DrawComponent_TogglePill(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
-    local w, h = comp.w or 50, comp.h or 24
-    local r = math.min(w,h)/2
-    local is_active = val_norm > 0.5
-    reaper.ImGui_SetCursorScreenPos(ctx, x, y); UI.Safe_InvisibleButton(ctx, comp.id, w, h)
-    local changed, new_norm = false, val_norm
-    if not UI.edit_mode and reaper.ImGui_IsItemClicked(ctx) then new_norm = is_active and 0.0 or 1.0; changed = true end
-    p_state.ghost_norm = new_norm
-    local c_bg = is_active and 0x00E5FFFF or 0x2A2A33FF
-    reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x+w, y+h, c_bg & 0xFFFFFF00 | math.floor(0xFF * env.act_a), r)
-    
-    local t_size = r * 1.5
-    local t_x, t_y = x + 3, y + h/2 - t_size/2
-    if w > h then t_x = x + 3 + (w - t_size - 6) * p_state.disp_val
-    else t_x = x + w/2 - t_size/2; t_y = y + 3 + (h - t_size - 6) * (1.0 - p_state.disp_val) end
-    
-    reaper.ImGui_DrawList_AddCircleFilled(dl, t_x + t_size/2, t_y + t_size/2, t_size/2, 0xFFFFFFFF & 0xFFFFFF00 | math.floor(0xFF * env.act_a))
-    return changed, new_norm
-end
-
-function UI.DrawComponent_ToggleLever(ctx, dl, comp, env, state, is_disabled, val_norm, disp_str, p_state)
-    local x, y = env.p_min_x + env.scroll_x + comp.x, env.p_min_y + env.scroll_y + comp.y
-    local w, h = comp.w or 24, comp.h or 50
-    local is_active = val_norm > 0.5
-    reaper.ImGui_SetCursorScreenPos(ctx, x, y); UI.Safe_InvisibleButton(ctx, comp.id, w, h)
-    local changed, new_norm = false, val_norm
-    if not UI.edit_mode and reaper.ImGui_IsItemClicked(ctx) then new_norm = is_active and 0.0 or 1.0; changed = true end
-    p_state.ghost_norm = new_norm
-    local a = math.floor(0xFF * env.act_a)
-    reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x+w, y+h, 0x1A1A1CFF & 0xFFFFFF00 | a, 4.0)
-    reaper.ImGui_DrawList_AddRect(dl, x, y, x+w, y+h, 0x08080AFF & 0xFFFFFF00 | a, 4.0, 0, 2.0)
-    local l_y = y + 4 + (h - 24 - 8) * (1.0 - p_state.disp_val)
-    reaper.ImGui_DrawList_AddRectFilled(dl, x+4, l_y+4, x+w-4, l_y+24+4, 0x00000088 & 0xFFFFFF00 | a, 2.0)
-    reaper.ImGui_DrawList_AddRectFilled(dl, x+2, l_y, x+w-2, l_y+24, 0xDDDDDDFF & 0xFFFFFF00 | a, 2.0)
-    reaper.ImGui_DrawList_AddLine(dl, x+4, l_y+12, x+w-4, l_y+12, 0x888888FF & 0xFFFFFF00 | a, 2.0)
-    return changed, new_norm
 end
 
 -- ==========================================
@@ -885,10 +764,10 @@ function UI.DrawWorkbenchWindow(ctx, env)
         local active_col = UI.edit_mode and 0xFF6B35FF or 0x00E5FFFF
         pcall(reaper.ImGui_PushStyleVar, ctx, reaper.ImGui_StyleVar_ItemSpacing(), 0, 0)
         
-        -- DESIGN (■)
+        -- DESIGN (â– )
         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Button(), UI.edit_mode and active_col or 0x2A2A2CFF)
         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Text(), UI.edit_mode and 0x1C1C1EFF or 0x888888FF)
-        if select(2, pcall(reaper.ImGui_Button, ctx, "■ DESIGN", btn_w, btn_h)) then 
+        if select(2, pcall(reaper.ImGui_Button, ctx, "â–  DESIGN", btn_w, btn_h)) then 
             if not UI.edit_mode and UI.wb_schema_buffer then
                 -- SNAP-BACK ENGINE: Reset all components to their Default Value
                 for _, comp in ipairs(UI.wb_schema_buffer) do
@@ -902,10 +781,10 @@ function UI.DrawWorkbenchWindow(ctx, env)
         pcall(reaper.ImGui_SameLine, ctx, 0, 0)
         pcall(reaper.ImGui_SetCursorPosY, ctx, (header_h - btn_h) / 2)
         
-        -- PLAY (▶)
+        -- PLAY (â–¶)
         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Button(), not UI.edit_mode and active_col or 0x2A2A2CFF)
         pcall(reaper.ImGui_PushStyleColor, ctx, reaper.ImGui_Col_Text(), not UI.edit_mode and 0x1C1C1EFF or 0x888888FF)
-        if select(2, pcall(reaper.ImGui_Button, ctx, "▶ PLAY", btn_w, btn_h)) then UI.edit_mode = false end
+        if select(2, pcall(reaper.ImGui_Button, ctx, "â–¶ PLAY", btn_w, btn_h)) then UI.edit_mode = false end
         pcall(reaper.ImGui_PopStyleColor, ctx, 2)
         
         pcall(reaper.ImGui_PopStyleVar, ctx, 1)
@@ -1418,51 +1297,74 @@ function UI.DrawWorkbenchWindow(ctx, env)
         pcall(reaper.ImGui_SetCursorScreenPos, ctx, raw_cx, raw_cy)
         reaper.ImGui_Dummy(ctx, canvas_w, canvas_h)
         pcall(reaper.ImGui_SetCursorScreenPos, ctx, raw_cx, raw_cy)
-        local is_canvas_hovered = reaper.ImGui_IsWindowHovered(ctx)
 
-        -- FREE-WHEEL RELATIVE ZOOM MATRIX
-        if is_canvas_hovered then
-            local wheel = select(2, pcall(reaper.ImGui_GetMouseWheel, ctx)) or 0
-            if wheel ~= 0 then
-                local mx, my = reaper.ImGui_GetMousePos(ctx)
-                local mouse_world_x = (mx - raw_cx - UI.camera.pan_x) / UI.camera.zoom
-                local mouse_world_y = (my - raw_cy - UI.camera.pan_y) / UI.camera.zoom
-                
-                UI.camera.zoom = math.max(0.2, math.min(5.0, UI.camera.zoom + (wheel * 0.1 * UI.camera.zoom)))
-                
-                UI.camera.pan_x = (mx - raw_cx) - (mouse_world_x * UI.camera.zoom)
-                UI.camera.pan_y = (my - raw_cy) - (mouse_world_y * UI.camera.zoom)
-            end
-        end
+        -- ==========================================================
+        -- PRO CODE: ISOLATED IDE SCALING (Device Lane Method)
+        -- ==========================================================
+        local reg = UI.ScaleRegistry
+        if not reg.IDE_Idx then reg.IDE_Idx = 4 end -- 4 is the default 1.0x scale
 
-        -- PAN MATRIX (Spacebar OR Middle Mouse OR Action Hub Tool)
-        local is_panning = (reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_Space()) or select(2, pcall(reaper.ImGui_IsMouseDown, ctx, 2)) or UI.active_tool == "PAN")
-        if is_panning then
-            if is_canvas_hovered then reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_ResizeAll()) end
-            if is_canvas_hovered and (reaper.ImGui_IsMouseDown(ctx, 0) or select(2, pcall(reaper.ImGui_IsMouseDown, ctx, 2))) then
-                local dx, dy = reaper.ImGui_GetMouseDelta(ctx)
-                UI.camera.pan_x = UI.camera.pan_x + dx
-                UI.camera.pan_y = UI.camera.pan_y + dy
-            end
-        end
+        local mw = select(2, pcall(reaper.ImGui_GetMouseWheel, ctx)) or 0
+        local mx, my = select(2, pcall(reaper.ImGui_GetMousePos, ctx))
+        mx, my = tonumber(mx) or 0, tonumber(my) or 0
         
-        pcall(reaper.ImGui_SetWindowFontScale, ctx, UI.camera.zoom)
+        -- PRO FIX: Native ImGui Hover (Respects Window Z-Order, Tabs, and Occlusion!)
+        local is_ide_hovered = select(2, pcall(reaper.ImGui_IsWindowHovered, ctx))
 
-        -- PRO CODE FIX: Do not re-evaluate window space inside a Group. 
-        -- Lock the internal layout rigidly to the mathematically predetermined canvas_w and canvas_h
+        -- 1. ISOLATED MOUSE WHEEL ZOOM (Stepped)
+        local ctrl_held = false
+        if pcall(reaper.ImGui_Mod_Ctrl) then
+            if select(2, pcall(reaper.ImGui_IsKeyDown, ctx, reaper.ImGui_Mod_Ctrl())) then ctrl_held = true end
+        elseif pcall(reaper.ImGui_ModFlags_Ctrl) then
+            local ok_mods, mods = pcall(reaper.ImGui_GetKeyMods, ctx)
+            local ok_flag, ctrl_flag = pcall(reaper.ImGui_ModFlags_Ctrl)
+            if ok_mods and ok_flag and (mods & ctrl_flag) ~= 0 then ctrl_held = true end
+        end
+
+        if is_ide_hovered and ctrl_held and mw ~= 0 then
+            if mw > 0 then 
+                reg.IDE_Idx = math.min(#reg.steps, reg.IDE_Idx + 1)
+            else 
+                reg.IDE_Idx = math.max(1, reg.IDE_Idx - 1)
+            end
+        end
+
+        local ide_z = reg.steps[reg.IDE_Idx] or 1.0
+
+        -- 2. ISOLATED PANNING LOGIC
+        local is_panning = (reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_Space()) or select(2, pcall(reaper.ImGui_IsMouseDown, ctx, 2)) or UI.active_tool == "PAN")
+        if is_panning and is_ide_hovered then
+            reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_ResizeAll())
+            local dx, dy = reaper.ImGui_GetMouseDelta(ctx)
+            UI.ide_camera.pan_x = UI.ide_camera.pan_x + dx
+            UI.ide_camera.pan_y = UI.ide_camera.pan_y + dy
+        end
+
+        -- 3. PERFECT FONT PUSH (Pulls pre-baked font, no Canvas variables)
+        UI.ide_pushed_font = false
+        if reg.Fonts and reg.Fonts[reg.IDE_Idx] then
+            local ide_font_sz = math.floor((14 * ide_z) + 0.5)
+            local ok = pcall(reaper.ImGui_PushFont, ctx, reg.Fonts[reg.IDE_Idx], ide_font_sz)
+            if not ok then ok = pcall(reaper.ImGui_PushFont, ctx, reg.Fonts[reg.IDE_Idx]) end
+            if ok then UI.ide_pushed_font = true end
+        end
+
+        -- ==========================================================
+        -- THE IDE GRID (Slaved exclusively to ide_z)
+        -- ==========================================================
         local avail_w, avail_h = canvas_w, canvas_h
         local cell_size = 40; local grid_w = UI.wb_grid_cols * cell_size; local grid_h = UI.wb_grid_rows * cell_size
         
-        local offset_x = math.max(0, (avail_w - grid_w * UI.camera.zoom) / 2)
-        local offset_y = math.max(0, (avail_h - grid_h * UI.camera.zoom) / 2)
-        local cx = raw_cx + offset_x + UI.camera.pan_x
-        local cy = raw_cy + offset_y + UI.camera.pan_y
+        local offset_x = math.max(0, (avail_w - grid_w * ide_z) / 2)
+        local offset_y = math.max(0, (avail_h - grid_h * ide_z) / 2)
+        local cx = raw_cx + offset_x + UI.ide_camera.pan_x 
+        local cy = raw_cy + offset_y + UI.ide_camera.pan_y 
 
-        reaper.ImGui_DrawList_AddRectFilled(dl_ide, cx, cy, cx + grid_w * UI.camera.zoom, cy + grid_h * UI.camera.zoom, 0x0A0A0DFF, 12.0 * UI.camera.zoom)
+        reaper.ImGui_DrawList_AddRectFilled(dl_ide, cx, cy, cx + grid_w * ide_z, cy + grid_h * ide_z, 0x0A0A0DFF, 12.0 * ide_z)
         if UI.edit_mode then
             for y = 0, UI.wb_grid_rows do 
                 for x = 0, UI.wb_grid_cols do 
-                    reaper.ImGui_DrawList_AddCircleFilled(dl_ide, cx + (x * cell_size * UI.camera.zoom), cy + (y * cell_size * UI.camera.zoom), 1.5 * UI.camera.zoom, 0xFFFFFF1A) 
+                    reaper.ImGui_DrawList_AddCircleFilled(dl_ide, cx + (x * cell_size * ide_z), cy + (y * cell_size * ide_z), 1.5 * ide_z, 0xFFFFFF1A) 
                 end 
             end
         end
@@ -1476,7 +1378,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
                 if (render_pass == 0 and not is_sel) or (render_pass == 1 and is_sel) then
                     if is_sel and not sel_comp then sel_comp = c end
                     local bx, by, bw, bh = GetBounds(c)
-                    local comp_x, comp_y = cx + bx * UI.camera.zoom, cy + by * UI.camera.zoom
+                    local comp_x, comp_y = cx + bx * ide_z, cy + by * ide_z
                     local comp_col = is_sel and 0x00E5FFFF or 0x444444FF
                     
                     -- ==========================================================
@@ -1485,7 +1387,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
                     if not UI.edit_mode then
                         if select(2, pcall(reaper.ImGui_IsMouseClicked, ctx, 0)) then
                             local mx, my = reaper.ImGui_GetMousePos(ctx)
-                            if mx >= comp_x and mx <= comp_x + (bw * UI.camera.zoom) and my >= comp_y and my <= comp_y + (bh * UI.camera.zoom) then
+                            if mx >= comp_x and mx <= comp_x + (bw * ide_z) and my >= comp_y and my <= comp_y + (bh * ide_z) then
                                 UI.selected_comp_ids = {c.id}
                             end
                         end
@@ -1496,7 +1398,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
                     -- ==========================================================
                     if UI.edit_mode then
                         reaper.ImGui_SetCursorScreenPos(ctx, comp_x, comp_y)
-                        reaper.ImGui_InvisibleButton(ctx, "ide_hit_"..c.id, bw * UI.camera.zoom, bh * UI.camera.zoom)
+                        reaper.ImGui_InvisibleButton(ctx, "ide_hit_"..c.id, bw * ide_z, bh * ide_z)
                         
                         if reaper.ImGui_IsItemClicked(ctx) then
                             UI.drag_mem.pending_push = true
@@ -1528,8 +1430,8 @@ function UI.DrawWorkbenchWindow(ctx, env)
                             if UI.drag_mem.pending_push then UI.PushUndoState(); UI.drag_mem.pending_push = false end
                             local my_start = UI.drag_mem.group_starts[c.id]
                             if my_start then
-                                local dx = (mx - UI.drag_mem.mouse_start_x) / UI.camera.zoom
-                                local dy = (my - UI.drag_mem.mouse_start_y) / UI.camera.zoom
+                                local dx = (mx - UI.drag_mem.mouse_start_x) / ide_z
+                                local dy = (my - UI.drag_mem.mouse_start_y) / ide_z
                                 
                                 -- Build unified bounding box for the selection group
                                 local g_min_x, g_min_y, g_max_x, g_max_y = 99999, 99999, -99999, -99999
@@ -1588,18 +1490,19 @@ function UI.DrawWorkbenchWindow(ctx, env)
                     local live_val = c.val or c.default_val or 0.5
                     local c_mock = { 
                         id = c.id, 
-                        x = c.x * UI.camera.zoom, 
-                        y = c.y * UI.camera.zoom, 
-                        w = (c.w or 60) * UI.camera.zoom, 
-                        h = (c.h or 20) * UI.camera.zoom, 
-                        radius = (c.radius or 16) * UI.camera.zoom, 
+                        z = ide_z, -- INJECT THE FIXED IDE SCALE
+                        x = c.x,   -- KEEP RAW. Scaling happens inside the component.
+                        y = c.y, 
+                        w = c.w or 60, 
+                        h = c.h or 20, 
+                        radius = c.radius or 16, 
                         align = c.align, label = c.label, color_token = c.color_token or "Teal", 
                         default_val = live_val,
                         routes = c.routes,
                         is_bipolar = c.is_bipolar,
                         steps = c.steps, axis = c.axis, wrap_at = c.wrap_at, 
-                        btn_w = c.btn_w and (c.btn_w * UI.camera.zoom) or nil, 
-                        btn_h = c.btn_h and (c.btn_h * UI.camera.zoom) or nil, 
+                        btn_w = c.btn_w, 
+                        btn_h = c.btn_h, 
                         labels = c.labels
                     }
                     
@@ -1655,16 +1558,17 @@ function UI.DrawWorkbenchWindow(ctx, env)
                     pcall(reaper.ImGui_DrawList_ChannelsSetCurrent, dl_ide, target_layer)
 
                     -- Replace your massive IDE if/elseif block with this updated block:
+                    -- PRO CODE: Unified Factory Dispatcher
                     local changed, new_norm = false, live_val
-                    local ox, oy = env.p_min_x, env.p_min_y -- The relative origin for the IDE
+                    local ox, oy = env.p_min_x, env.p_min_y 
                     
-                    if c.type == "AuraKnob" then changed, new_norm = UI.DrawComponent_AuraKnob(ctx, dl_ide, c_mock, ox, oy, env, nil, false, live_val, disp_str, pst)
-                    elseif c.type == "InlineDrag" then changed, new_norm = UI.DrawComponent_InlineDrag(ctx, dl_ide, c_mock, ox, oy, env, nil, false, live_val, disp_str, pst)
-                    elseif env.NodeUI then
-                        -- The IDE uses the NodeUI registry directly!
-                        local mock_renderer = env.NodeUI.Registry[c.type]
-                        if mock_renderer then
-                            changed, new_norm = mock_renderer(ctx, dl_ide, c_mock, ox, oy, env, nil, false, live_val, disp_str, pst, UI)
+                    if env.NodeUI and env.NodeUI.Registry then
+                        local renderer = env.NodeUI.Registry[c.type]
+                        if renderer then
+                            -- Both IDE and Canvas now pass the EXACT same footprint
+                            changed, new_norm = renderer(ctx, dl_ide, c_mock, ox, oy, env, nil, false, live_val, disp_str, pst, UI)
+                        else
+                            reaper.ShowConsoleMsg("OMM OS Error: Missing Renderer in NodeUI Registry for -> " .. tostring(c.type) .. "\n")
                         end
                     end
                     
@@ -1685,11 +1589,11 @@ function UI.DrawWorkbenchWindow(ctx, env)
             for _, c in ipairs(UI.wb_schema_buffer) do
                 if UI.IsComponentSelected(c.id) then
                     local bx, by, bw, bh = GetBounds(c)
-                    local comp_x, comp_y = cx + bx * UI.camera.zoom, cy + by * UI.camera.zoom
+                    local comp_x, comp_y = cx + bx * ide_z, cy + by * ide_z
                     g_min_x = math.min(g_min_x, comp_x)
                     g_min_y = math.min(g_min_y, comp_y)
-                    g_max_x = math.max(g_max_x, comp_x + bw * UI.camera.zoom)
-                    g_max_y = math.max(g_max_y, comp_y + bh * UI.camera.zoom)
+                    g_max_x = math.max(g_max_x, comp_x + bw * ide_z)
+                    g_max_y = math.max(g_max_y, comp_y + bh * ide_z)
                 end
             end
             if g_min_x < 99999 and UI.edit_mode then
@@ -1704,8 +1608,8 @@ function UI.DrawWorkbenchWindow(ctx, env)
                     reaper.ImGui_DrawList_AddTriangleFilled(dl_ide, hx+hw, hy, hx+hw, hy+hh, hx, hy+hh, is_hov and 0xFFFFFFFF or 0xFFFFFF88)
                     if reaper.ImGui_IsItemActive(ctx) and reaper.ImGui_IsMouseDragging(ctx, 0) then
                         local dx, dy = reaper.ImGui_GetMouseDelta(ctx)
-                        dx = dx / UI.camera.zoom
-                        dy = dy / UI.camera.zoom
+                        dx = dx / ide_z
+                        dy = dy / ide_z
                         if sel_comp.type == "AuraKnob" then sel_comp.radius = math.floor(math.max(10, (sel_comp.radius or 16) + math.max(dx, dy)*0.5))
                         else sel_comp.w = math.floor(math.max(20, (sel_comp.w or 60) + dx)); sel_comp.h = math.floor(math.max(10, (sel_comp.h or 20) + dy)) end
                     end
@@ -1716,7 +1620,7 @@ function UI.DrawWorkbenchWindow(ctx, env)
         -- BACKDROP / DROP ZONE / MARQUEE: ONLY ACTIVE IN DESIGN MODE
         if UI.edit_mode then
             reaper.ImGui_SetCursorScreenPos(ctx, cx, cy)
-            reaper.ImGui_InvisibleButton(ctx, "canvas_drop_zone", grid_w * UI.camera.zoom, grid_h * UI.camera.zoom)
+            reaper.ImGui_InvisibleButton(ctx, "canvas_drop_zone", grid_w * ide_z, grid_h * ide_z)
             
             local bg_clicked = reaper.ImGui_IsItemClicked(ctx, 0)
             if bg_clicked then
@@ -1735,8 +1639,8 @@ function UI.DrawWorkbenchWindow(ctx, env)
                 
                 for _, c in ipairs(UI.wb_schema_buffer) do
                     local bx, by, bw, bh = GetBounds(c)
-                    local comp_screen_x, comp_screen_y = cx + bx * UI.camera.zoom, cy + by * UI.camera.zoom
-                    local comp_w, comp_h = bw * UI.camera.zoom, bh * UI.camera.zoom
+                    local comp_screen_x, comp_screen_y = cx + bx * ide_z, cy + by * ide_z
+                    local comp_w, comp_h = bw * ide_z, bh * ide_z
                     if comp_screen_x < rx + rw and comp_screen_x + comp_w > rx and comp_screen_y < ry + rh and comp_screen_y + comp_h > ry then
                         UI.SelectComponent(c.id, true)
                     end
@@ -1748,8 +1652,8 @@ function UI.DrawWorkbenchWindow(ctx, env)
                 local accepted, payload = reaper.ImGui_AcceptDragDropPayload(ctx, 'NEW_COMP')
                 if accepted and payload then
                     local mx, my = reaper.ImGui_GetMousePos(ctx)
-                    local world_drop_x = (mx - cx) / UI.camera.zoom
-                    local world_drop_y = (my - cy) / UI.camera.zoom
+                    local world_drop_x = (mx - cx) / ide_z
+                    local world_drop_y = (my - cy) / ide_z
                     local drop_x = math.max(0, math.floor(world_drop_x / 10) * 10)
                     local drop_y = math.max(0, math.floor(world_drop_y / 10) * 10)
                     local blueprint_prefix = active_target.name:match("([^%s:]+)$") or "MOD"
@@ -1782,25 +1686,26 @@ function UI.DrawWorkbenchWindow(ctx, env)
             end
         end
         pcall(reaper.ImGui_SetWindowFontScale, ctx, 1.0)
+        if UI.ide_pushed_font then pcall(reaper.ImGui_PopFont, ctx); UI.ide_pushed_font = false end
         
-        -- TOP-RIGHT ZOOM HUD
+        -- TOP-RIGHT ZOOM HUD (Isolated Registry Hook)
         local hud_w, hud_h = 130, 32
         local hud_x, hud_y = raw_cx + avail_w - hud_w - 20, raw_cy + 20
         reaper.ImGui_DrawList_AddRectFilled(dl_ide, hud_x, hud_y, hud_x + hud_w, hud_y + hud_h, 0x11111199, 16.0)
         reaper.ImGui_DrawList_AddRect(dl_ide, hud_x, hud_y, hud_x + hud_w, hud_y + hud_h, 0xFFFFFF22, 16.0, 0, 1.0)
         
         reaper.ImGui_SetCursorScreenPos(ctx, hud_x + 8, hud_y + 4)
-        if reaper.ImGui_Button(ctx, "-##zo", 24, 24) then UI.camera.zoom = math.max(0.2, UI.camera.zoom - 0.1) end
+        if reaper.ImGui_Button(ctx, "-##zo", 24, 24) then UI.ScaleRegistry.IDE_Idx = math.max(1, UI.ScaleRegistry.IDE_Idx - 1) end
         reaper.ImGui_SameLine(ctx)
         
-        local z_str = string.format("%d%%", math.floor(UI.camera.zoom * 100))
+        local z_str = string.format("%d%%", math.floor((UI.ScaleRegistry.steps[UI.ScaleRegistry.IDE_Idx] or 1.0) * 100))
         local zw = reaper.ImGui_CalcTextSize(ctx, z_str)
         reaper.ImGui_SetCursorScreenPos(ctx, hud_x + (hud_w/2) - (zw/2), hud_y + 8)
         reaper.ImGui_Text(ctx, z_str)
-        if reaper.ImGui_IsItemClicked(ctx) then UI.camera.zoom = 1.0; UI.camera.pan_x = 0; UI.camera.pan_y = 0 end
+        if reaper.ImGui_IsItemClicked(ctx) then UI.ScaleRegistry.IDE_Idx = 4; UI.ide_camera.pan_x = 0; UI.ide_camera.pan_y = 0 end
         
         reaper.ImGui_SetCursorScreenPos(ctx, hud_x + hud_w - 32, hud_y + 4)
-        if reaper.ImGui_Button(ctx, "+##zi", 24, 24) then UI.camera.zoom = math.min(5.0, UI.camera.zoom + 0.1) end
+        if reaper.ImGui_Button(ctx, "+##zi", 24, 24) then UI.ScaleRegistry.IDE_Idx = math.min(#UI.ScaleRegistry.steps, UI.ScaleRegistry.IDE_Idx + 1) end
 
         -- LEFT-EDGE ACTION HUB (ABSOLUTE VERTICAL CENTER)
         local tb_w, tb_h = 44, 170
@@ -2372,14 +2277,28 @@ end
 -- ==============================================================================
 -- LEGACY WIDGET API (Raw Native Drawing, No Protected Wrappers)
 -- ==============================================================================
-function UI.DrawSharpGlowingText(draw_list, x, y, text, col, alpha_mult)
+function UI.DrawSharpGlowingText(draw_list, x, y, text, col, alpha_mult, opt_font, opt_size)
     local a = tonumber(alpha_mult) or 1.0; local bg = math.floor(0x66*a); local drop = math.floor(0xFF*a); local c_bg = (col & 0xFFFFFF00) | bg
-    reaper.ImGui_DrawList_AddText(draw_list, x-1, y, c_bg, tostring(text))
-    reaper.ImGui_DrawList_AddText(draw_list, x+1, y, c_bg, tostring(text))
-    reaper.ImGui_DrawList_AddText(draw_list, x, y-1, c_bg, tostring(text))
-    reaper.ImGui_DrawList_AddText(draw_list, x, y+1, c_bg, tostring(text))
-    reaper.ImGui_DrawList_AddText(draw_list, x+1, y+1, 0x00000000 | drop, tostring(text))
-    reaper.ImGui_DrawList_AddText(draw_list, x, y, (0xFFFFFF00) | drop, tostring(text))
+    
+    -- PRO FIX: Subpixel Immune Floor Anchor
+    local fx = math.floor(x + 0.5)
+    local fy = math.floor(y + 0.5)
+    
+    if opt_font and opt_size then
+        reaper.ImGui_DrawList_AddTextEx(draw_list, opt_font, opt_size, fx-1, fy, c_bg, tostring(text))
+        reaper.ImGui_DrawList_AddTextEx(draw_list, opt_font, opt_size, fx+1, fy, c_bg, tostring(text))
+        reaper.ImGui_DrawList_AddTextEx(draw_list, opt_font, opt_size, fx, fy-1, c_bg, tostring(text))
+        reaper.ImGui_DrawList_AddTextEx(draw_list, opt_font, opt_size, fx, fy+1, c_bg, tostring(text))
+        reaper.ImGui_DrawList_AddTextEx(draw_list, opt_font, opt_size, fx+1, fy+1, 0x00000000 | drop, tostring(text))
+        reaper.ImGui_DrawList_AddTextEx(draw_list, opt_font, opt_size, fx, fy, (0xFFFFFF00) | drop, tostring(text))
+    else
+        reaper.ImGui_DrawList_AddText(draw_list, fx-1, fy, c_bg, tostring(text))
+        reaper.ImGui_DrawList_AddText(draw_list, fx+1, fy, c_bg, tostring(text))
+        reaper.ImGui_DrawList_AddText(draw_list, fx, fy-1, c_bg, tostring(text))
+        reaper.ImGui_DrawList_AddText(draw_list, fx, fy+1, c_bg, tostring(text))
+        reaper.ImGui_DrawList_AddText(draw_list, fx+1, fy+1, 0x00000000 | drop, tostring(text))
+        reaper.ImGui_DrawList_AddText(draw_list, fx, fy, (0xFFFFFF00) | drop, tostring(text))
+    end
 end
 
 function UI.DrawFixedTextToggleNoBorder(ctx, id_str, text, active, x, y, fixed_w, h, draw_list, alpha_mult, dt)

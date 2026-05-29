@@ -1,0 +1,55 @@
+-- ==============================================================================
+-- ANTI-PATTERN LOG
+-- WARNING: DO NOT IMPLEMENT THESE ARCHITECTURAL FLAWS
+-- ==============================================================================
+-- This file documents catastrophic failures, API hallucinations, and architectural
+-- traps that have broken the Open-Macro-Maker UI/rendering engine.
+-- Refer to this before attempting text scaling, font overrides, or signature modifications.
+
+-- ==========================================================
+-- 1. THE ADDTEXT_EX SIGNATURE CRASH (API Hallucination)
+-- ==========================================================
+-- [WHAT HAPPENED]: Attempted to replace native `AddText` with `AddTextEx` to decouple font scaling.
+-- The script instantly crashed with `bad argument #3 (number expected, got nil)` and pointer errors.
+--
+-- [WHY IT FAILED (THE PARAMETER)]: ReaImGui bindings do not strictly mirror C++ ImGui signatures.
+-- Passing a `nil` font pointer, or misunderstanding the placement of the `ctx` pointer in the ReaScript
+-- wrapper, causes all subsequent arguments to shift by one position.
+-- 
+-- [THE RESULT]: ImGui attempts to read memory pointers as numbers (e.g., `got 0x765bea30`).
+-- It destroys the rendering loop immediately. Native `AddText` naturally respects `SetWindowFontScale`
+-- and should be used instead. Do not try to inject raw pointers into text drawing functions without
+-- strict validation of the ReaImGui wrapper signature.
+
+
+-- ==========================================================
+-- 2. THE SETWINDOWFONTSCALE HARD RESET (State Reset Timebomb)
+-- ==========================================================
+-- [WHAT HAPPENED]: Attempted to dynamically scale text using `ImGui_SetWindowFontScale(ctx, scale)`,
+-- and then hardcoded a reset at the end of the function using `ImGui_SetWindowFontScale(ctx, 1.0)`.
+--
+-- [WHY IT FAILED (THE PARAMETER)]: The hardcoded `1.0`. The IDE or Node Canvas operates under a global
+-- layout multiplier (e.g., 1.5x zoom). By blindly forcing the scale back to 1.0 after drawing a single
+-- text string, the global state of the entire ImGui window is corrupted for the rest of the frame.
+--
+-- [THE RESULT]: The first text label renders correctly, but every subsequent widget, bounding box, 
+-- and layout spacing calculation instantly collapses to 1.0x scale. The UI layout shatters.
+-- [THE FIX]: Always capture the existing scale (`GetWindowFontScale`) before modifying it, and restore
+-- to the captured scale, NEVER a hardcoded 1.0.
+
+
+-- ==========================================================
+-- 3. THE OVERSAMPLED SIZE BUG (The 200% Blowout)
+-- ==========================================================
+-- [WHAT HAPPENED]: Attempted to calculate the text scale using `scale = target_size / 14.0`,
+-- assuming the baseline font was always 14px.
+--
+-- [WHY IT FAILED (THE PARAMETER)]: The divisor `14.0`. When `Canvas_Font` (an oversampled font 
+-- baked at 28px to retain sharpness at 200%) is pushed to the stack, ImGui applies the calculated scale 
+-- to the native size of the active font. If the target size is 21 (1.5x zoom), `21 / 14.0 = 1.5`. 
+-- ImGui then applies 1.5x scale to the 28px font. `28 * 1.5 = 42px`.
+--
+-- [THE RESULT]: The text renders twice as large as expected, violently blowing out of the component
+-- chassis. The math mathematically stacks the multiplier on top of the already oversampled font.
+-- [THE FIX]: Always divide by the actual native size of the currently pushed font 
+-- (`GetFontSize(ctx)`), NOT a hardcoded baseline.

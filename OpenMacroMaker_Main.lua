@@ -13,6 +13,17 @@ NodeUI.Router = Router
 
 local ctx = reaper.ImGui_CreateContext('Open Macro Maker')
 
+-- ==========================================================
+-- PRO CODE: INITIALIZE UI SCALE ATLAS
+-- ==========================================================
+if UI and UI.InitFontAtlas then
+    UI.InitFontAtlas(ctx)
+    if NodeUI and UI.ScaleRegistry and UI.ScaleRegistry.Canvas_Font then
+        NodeUI.Canvas_Font = UI.ScaleRegistry.Canvas_Font
+    end
+end
+-- ==========================================================
+
 reaper.gmem_attach("OMM_Shared")
 DSP.InitGMEM()
 
@@ -380,13 +391,13 @@ local function SaveState()
         full_str = full_str .. "CANVAS|" .. ws.name .. "||"
         for _, n in ipairs(ws.nodes) do
             local g_str = tostring(n.lane_guid or "")
-            if n.type == "MACRO" then full_str = full_str .. "MACRO|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..n.val.."|"..n.col.."|"..g_str.."||"
-            elseif n.type == "LFO" then full_str = full_str .. "LFO|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..tostring(n.sync).."|"..n.speed_idx.."|"..n.rate_hz.."|"..n.mode.."|"..n.dir.."|"..n.preset_idx.."|"..(n.midi_in and 1 or 0).."|"..n.phase_offset.."|"..n.smooth.."|"..n.delay.."|"..n.rise.."|"..g_str.."||"
-            elseif n.type == "TARGET" then full_str = full_str .. "TARGET|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..n.track_idx.."|"..n.fx_idx.."|"..n.param_idx.."|"..n.param_name.."|"..n.base_val.."|"..n.col.."|"..g_str.."||"
-            elseif n.type == "MIDI_IN" then full_str = full_str .. "MIDI_IN|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..(n.midi_channel or 1).."|"..n.col.."|"..g_str.."||"
-            elseif n.type == "GAIN" then full_str = full_str .. "GAIN|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..(n.val or 0.833).."|"..(n.pan or 0.5).."|"..(n.extended_range and 1 or 0).."|"..(n.track_idx or 0).."|"..g_str.."||"
+            if n.type == "MACRO" then full_str = full_str .. "MACRO|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..n.val.."|"..n.col.."|"..g_str.."|"..(n.algo or 400).."||"
+            elseif n.type == "LFO" then full_str = full_str .. "LFO|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..tostring(n.sync).."|"..n.speed_idx.."|"..n.rate_hz.."|"..n.mode.."|"..n.dir.."|"..n.preset_idx.."|"..(n.midi_in and 1 or 0).."|"..n.phase_offset.."|"..n.smooth.."|"..n.delay.."|"..n.rise.."|"..g_str.."|"..(n.algo or 100).."||"
+            elseif n.type == "TARGET" then full_str = full_str .. "TARGET|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..n.track_idx.."|"..n.fx_idx.."|"..n.param_idx.."|"..n.param_name.."|"..n.base_val.."|"..n.col.."|"..g_str.."|"..(n.algo or 500).."||"
+            elseif n.type == "MIDI_IN" then full_str = full_str .. "MIDI_IN|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..(n.midi_channel or 1).."|"..n.col.."|"..g_str.."|"..(n.algo or 600).."||"
+            elseif n.type == "GAIN" then full_str = full_str .. "GAIN|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..(n.val or 0.833).."|"..(n.pan or 0.5).."|"..(n.extended_range and 1 or 0).."|"..(n.track_idx or 0).."|"..g_str.."|"..(n.algo or 200).."||"
             elseif n.type == "COMPRESSOR" then full_str = full_str .. "COMP|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..n.thresh.."|"..n.in_drive.."|"..n.ratio.."|"..n.attack.."|"..n.release.."|"..n.knee.."|"..n.mix.."|"..(n.mode_rms and 1 or 0).."|"..(n.mode_fb and 1 or 0).."|"..n.makeup.."|"..g_str.."|"..(n.vis_mode or 0).."|"..(n.gmem_slot or 1).."|"..tostring(n.algo or "VCA").."||"
-            elseif n.type == "TRANSFER_CURVE" then full_str = full_str .. "CURVE|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..n.grid_x.."|"..n.grid_y.."|"..n.col.."|"..n.depth.."|"..(n.unipolar and 1 or 0).."|"..(n.bipolar and 1 or 0).."|"..(n.active and 1 or 0).."|"..(n.flip and 1 or 0).."|"..(n.expanded and 1 or 0).."|"..n.engine_mode.."|"..g_str.."||" end
+            elseif n.type == "TRANSFER_CURVE" then full_str = full_str .. "CURVE|"..n.id.."|"..n.target_x.."|"..n.target_y.."|"..n.grid_x.."|"..n.grid_y.."|"..n.col.."|"..n.depth.."|"..(n.unipolar and 1 or 0).."|"..(n.bipolar and 1 or 0).."|"..(n.active and 1 or 0).."|"..(n.flip and 1 or 0).."|"..(n.expanded and 1 or 0).."|"..n.engine_mode.."|"..g_str.."|"..(n.algo or 300).."||" end
         end
         full_str = full_str .. "WS_CONNS||"
         for _, c in ipairs(ws.connections) do full_str = full_str .. c.from_node..","..c.to_node..","..c.to_port..","..c.depth..","..(c.bipolar and 1 or 0)..","..(c.bypass and 1 or 0).."||" end
@@ -396,6 +407,15 @@ local function SaveState()
     needs_save = false
 end
 
+local function SplitString(str, delim)
+    local result = {}
+    local pattern = "(.-)" .. delim
+    for match in (str .. delim):gmatch(pattern) do
+        table.insert(result, match)
+    end
+    return result
+end
+
 local function LoadState()
     local rv_n, n_str = reaper.GetProjExtState(0, "OpenMacroMaker", "CanvasDataV30")
     if rv_n > 0 and n_str ~= "" then 
@@ -403,37 +423,61 @@ local function LoadState()
         local active_ws = nil
         local max_id = 0
         for chunk in string.gmatch(n_str, "(.-)||") do
-            local pts = {}
-            for p in string.gmatch(chunk, "([^|]+)") do table.insert(pts, p) end
+            if chunk == "" then goto continue end
+            local pts = SplitString(chunk, "|")
             
             if pts[1] == "CANVAS" then 
                 active_ws = {name = pts[2] or "Canvas", nodes = {}, connections = {}}
                 table.insert(workspaces, active_ws)
             elseif active_ws and pts[1] == "MACRO" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
-                table.insert(active_ws.nodes, {id = id, lane_guid = pts[7]=="" and nil or pts[7], type = "MACRO", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, val = tonumber(pts[5]) or 0.0, col = math.floor(tonumber(pts[6]) or 0x00E5FFFF), hide = false, bypass = false, flip = false, engine_mode = 0, in_val = 0.0, out_val = 0.0, mod_sum = 0, vis_pos_mod = 0, vis_neg_mod = 0, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, active_conn_idx = 1})
+                table.insert(active_ws.nodes, {id = id, lane_guid = pts[7]=="" and nil or pts[7], type = "MACRO", algo = tonumber(pts[8]) or 400, x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, val = tonumber(pts[5]) or 0.0, col = math.floor(tonumber(pts[6]) or 0x00E5FFFF), hide = false, bypass = false, flip = false, engine_mode = 0, in_val = 0.0, out_val = 0.0, mod_sum = 0, vis_pos_mod = 0, vis_neg_mod = 0, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, active_conn_idx = 1})
             elseif active_ws and pts[1] == "LFO" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
+                
+                -- Support legacy (16 parts) and modern (18 parts) saves
+                local m_str_val = pts[18]
+                local is_legacy = (not pts[18] or pts[18] == "") and pts[16] and string.find(pts[16], ";")
+                if is_legacy then m_str_val = pts[16] end
+                
                 local mseg_arr = {}
-                for m_chunk in string.gmatch(pts[22] or "", "([^;]+)") do 
+                for m_chunk in string.gmatch(m_str_val or "", "([^;]+)") do 
                     local m_parts = {}
                     for mp in string.gmatch(m_chunk, "([^,]+)") do table.insert(m_parts, tonumber(mp)) end
                     if #m_parts >= 2 then table.insert(mseg_arr, {x=m_parts[1], y=m_parts[2], curve=m_parts[3] or 0.0}) end 
                 end
                 if #mseg_arr < 2 then mseg_arr = DeepCopy(lfo_presets[1].nodes) end
-                local n_lfo = {id=id, lane_guid = pts[16]=="" and nil or pts[16], type="LFO", x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, sync=pts[5]=="true", speed_float=5.0, speed_idx=math.floor(tonumber(pts[6]) or 5), rate_hz=tonumber(pts[7]) or 1.0, mode=math.floor(tonumber(pts[8]) or 0), dir=math.floor(tonumber(pts[9]) or 0), preset_idx=math.floor(tonumber(pts[10]) or 0), grid_x=8.0, grid_y=8.0, col=0x00E5FFFF, flip=false, engine_mode=1, depth=1.0, trip=false, dot=false, midi_in=tonumber(pts[11])==1, phase_offset=tonumber(pts[12]) or 0.0, smooth=tonumber(pts[13]) or 0.0, delay=tonumber(pts[14]) or 0.0, rise=tonumber(pts[15]) or 0.0, phase=0.0, run_phase=0.0, midi_pulse=0, last_midi_pulse=0, env_active=true, note_on_time=0.0, smoothed_val=0.0, in_val=0.0, out_val=0.0, draw_mode=0, mseg_nodes=mseg_arr, dragged_node=-1, dragged_curve_node=-1, midi_trig=0.0, last_midi_trig=0.0, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0}
+                
+                local lane_g = is_legacy and nil or pts[16]
+                if lane_g == "" then lane_g = nil end
+                local alg = is_legacy and 100 or (tonumber(pts[17]) or pts[17])
+                if alg == "" or not alg then alg = 100 end
+                
+                local n_lfo = {id=id, lane_guid = lane_g, type="LFO", algo = alg, x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, sync=pts[5]=="true", speed_float=5.0, speed_idx=math.floor(tonumber(pts[6]) or 5), rate_hz=tonumber(pts[7]) or 1.0, mode=math.floor(tonumber(pts[8]) or 0), dir=math.floor(tonumber(pts[9]) or 0), preset_idx=math.floor(tonumber(pts[10]) or 0), grid_x=8.0, grid_y=8.0, col=0x00E5FFFF, flip=false, engine_mode=1, depth=1.0, trip=false, dot=false, midi_in=tonumber(pts[11])==1, phase_offset=tonumber(pts[12]) or 0.0, smooth=tonumber(pts[13]) or 0.0, delay=tonumber(pts[14]) or 0.0, rise=tonumber(pts[15]) or 0.0, phase=0.0, run_phase=0.0, midi_pulse=0, last_midi_pulse=0, env_active=true, note_on_time=0.0, smoothed_val=0.0, in_val=0.0, out_val=0.0, draw_mode=0, mseg_nodes=mseg_arr, dragged_node=-1, dragged_curve_node=-1, midi_trig=0.0, last_midi_trig=0.0, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0}
                 table.insert(active_ws.nodes, n_lfo); BakeWavetable(n_lfo)
             elseif active_ws and pts[1] == "CURVE" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
+                
+                -- Support legacy (15 parts) and modern (17 parts) saves
+                local m_str_val = pts[17]
+                local is_legacy = (not pts[17] or pts[17] == "") and pts[15] and string.find(pts[15], ";")
+                if is_legacy then m_str_val = pts[15] end
+                
                 local mseg_arr = {}
-                for m_chunk in string.gmatch(pts[15] or "", "([^;]+)") do 
+                for m_chunk in string.gmatch(m_str_val or "", "([^;]+)") do 
                     local m_parts = {}
                     for mp in string.gmatch(m_chunk, "([^,]+)") do table.insert(m_parts, tonumber(mp)) end
                     if #m_parts >= 2 then table.insert(mseg_arr, {x=m_parts[1], y=m_parts[2], curve=m_parts[3] or 0.0}) end 
                 end
                 if #mseg_arr < 2 then mseg_arr = DeepCopy(curve_presets[1].nodes) end
+                
+                local lane_g = is_legacy and nil or pts[15]
+                if lane_g == "" then lane_g = nil end
+                local alg = is_legacy and 300 or (tonumber(pts[16]) or pts[16])
+                if alg == "" or not alg then alg = 300 end
+                
                 local exp = tonumber(pts[13])==1
-                local n_c = {id=id, lane_guid = pts[16]=="" and nil or pts[16], type="TRANSFER_CURVE", x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, grid_x=tonumber(pts[5]) or 6, grid_y=tonumber(pts[6]) or 6, col=math.floor(tonumber(pts[7]) or 0xFFE600FF), depth=tonumber(pts[8]) or 0.5, unipolar=tonumber(pts[9])==1, bipolar=tonumber(pts[10])==1, active=tonumber(pts[11])==1, flip=tonumber(pts[12])==1, expanded=exp, engine_mode=math.floor(tonumber(pts[14]) or 0), in_val=0.0, depth_in_val=0.0, out_val=0.0, mseg_nodes=mseg_arr, dragged_node=-1, dragged_curve_node=-1, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0}
+                local n_c = {id=id, lane_guid = lane_g, type="TRANSFER_CURVE", algo = alg, x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, grid_x=tonumber(pts[5]) or 6, grid_y=tonumber(pts[6]) or 6, col=math.floor(tonumber(pts[7]) or 0xFFE600FF), depth=tonumber(pts[8]) or 0.5, unipolar=tonumber(pts[9])==1, bipolar=tonumber(pts[10])==1, active=tonumber(pts[11])==1, flip=tonumber(pts[12])==1, expanded=exp, engine_mode=math.floor(tonumber(pts[14]) or 0), in_val=0.0, depth_in_val=0.0, out_val=0.0, mseg_nodes=mseg_arr, dragged_node=-1, dragged_curve_node=-1, mod_sum=0, flash_time=0.0, shadow_spread=6.0, shockwave_time=0.0}
                 table.insert(active_ws.nodes, n_c); BakeWavetable(n_c)
             elseif active_ws and pts[1] == "COMP" then
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
@@ -452,18 +496,18 @@ local function LoadState()
                 table.insert(active_ws.nodes, {id=id, lane_guid = pts[15]=="" and nil or pts[15], type="COMPRESSOR", algo=algo_val, x=tonumber(pts[3]) or 0, y=tonumber(pts[4]) or 0, target_x=tonumber(pts[3]) or 0, target_y=tonumber(pts[4]) or 0, thresh=tonumber(pts[5]) or 0.0, in_drive=tonumber(pts[6]) or 0.0, ratio=tonumber(pts[7]) or 4.0, attack=tonumber(pts[8]) or 5.0, release=tonumber(pts[9]) or 50.0, knee=tonumber(pts[10]) or 6.0, mix=tonumber(pts[11]) or 1.0, mode_rms=tonumber(pts[12])==1, mode_fb=tonumber(pts[13])==1, makeup=tonumber(pts[14]) or 0.0, col=0x00E5FFFF, bypass=false, vis_mode=math.floor(tonumber(pts[16]) or 0), gmem_slot=g_slot})
             elseif active_ws and pts[1] == "TARGET" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
-                table.insert(active_ws.nodes, {id = id, lane_guid = pts[11]=="" and nil or pts[11], type = "TARGET", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, track_idx = math.floor(tonumber(pts[5]) or 0), fx_idx = math.floor(tonumber(pts[6]) or 0), param_idx = math.floor(tonumber(pts[7]) or 0), param_name = pts[8] or "Param", base_val = tonumber(pts[9]) or 0.0, depth = 1.0, col = math.floor(tonumber(pts[10]) or 0xEEEEEEFF), engine_mode = 0, in_val = 0.0, out_val = 0.0, mod_sum = 0, vis_pos_mod = 0, vis_neg_mod = 0, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, active_conn_idx = 1})
+                table.insert(active_ws.nodes, {id = id, lane_guid = pts[11]=="" and nil or pts[11], type = "TARGET", algo = tonumber(pts[12]) or 500, x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, track_idx = math.floor(tonumber(pts[5]) or 0), fx_idx = math.floor(tonumber(pts[6]) or 0), param_idx = math.floor(tonumber(pts[7]) or 0), param_name = pts[8] or "Param", base_val = tonumber(pts[9]) or 0.0, depth = 1.0, col = math.floor(tonumber(pts[10]) or 0xEEEEEEFF), engine_mode = 0, in_val = 0.0, out_val = 0.0, mod_sum = 0, vis_pos_mod = 0, vis_neg_mod = 0, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, active_conn_idx = 1})
             elseif active_ws and pts[1] == "MIDI_IN" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
-                table.insert(active_ws.nodes, {id = id, lane_guid = pts[7]=="" and nil or pts[7], type = "MIDI_IN", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, midi_channel = math.floor(tonumber(pts[5]) or 1), col = math.floor(tonumber(pts[6]) or 0xFF4000FF), out_val = 0.0, flash_time = 0.0, shadow_spread = 6.0, last_note_on = 0.0})
+                table.insert(active_ws.nodes, {id = id, lane_guid = pts[7]=="" and nil or pts[7], type = "MIDI_IN", algo = tonumber(pts[8]) or 600, x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, midi_channel = math.floor(tonumber(pts[5]) or 1), col = math.floor(tonumber(pts[6]) or 0xFF4000FF), out_val = 0.0, flash_time = 0.0, shadow_spread = 6.0, last_note_on = 0.0})
             elseif active_ws and pts[1] == "GAIN" then 
                 local id = math.floor(tonumber(pts[2]) or 0); max_id = math.max(max_id, id)
-                table.insert(active_ws.nodes, {id = id, lane_guid = pts[9]=="" and nil or pts[9], type = "GAIN", x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, val = tonumber(pts[5]) or 0.833333, pan = tonumber(pts[6]) or 0.5, extended_range = tonumber(pts[7]) == 1, track_idx = math.floor(tonumber(pts[8]) or 0), in_val = 0.0, depth_in_val = 0.0, out_val = 0.0, smooth_db = -60.0, col = 0x00FF88FF, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, dot_pop_alpha = 0.0})
-            elseif active_ws and string.find(chunk, ",") then 
-                local cp = {}
-                for c in string.gmatch(chunk, "([^,]+)") do table.insert(cp, c) end
+                table.insert(active_ws.nodes, {id = id, lane_guid = pts[9]=="" and nil or pts[9], type = "GAIN", algo = tonumber(pts[10]) or 200, x = tonumber(pts[3]) or 0, y = tonumber(pts[4]) or 0, target_x = tonumber(pts[3]) or 0, target_y = tonumber(pts[4]) or 0, val = tonumber(pts[5]) or 0.833333, pan = tonumber(pts[6]) or 0.5, extended_range = tonumber(pts[7]) == 1, track_idx = math.floor(tonumber(pts[8]) or 0), in_val = 0.0, depth_in_val = 0.0, out_val = 0.0, smooth_db = -60.0, col = 0x00FF88FF, flash_time = 0.0, shadow_spread = 6.0, shockwave_time = 0.0, dot_pop_alpha = 0.0})
+            elseif chunk ~= "WS_END" and active_ws and string.find(chunk, ",") then 
+                local cp = SplitString(chunk, ",")
                 if #cp >= 4 then table.insert(active_ws.connections, {from_node = math.floor(tonumber(cp[1]) or 0), to_node = math.floor(tonumber(cp[2]) or 0), to_port = cp[3] or "IN", depth = tonumber(cp[4]) or 0.5, bipolar = (tonumber(cp[5]) == 1), bypass = (tonumber(cp[6]) == 1)}) end 
             end
+            ::continue::
         end
         node_counter = max_id
         if #workspaces == 0 then table.insert(workspaces, {name = "Canvas 1", nodes = {}, connections = {}}) end
@@ -562,6 +606,11 @@ local function loop()
             local ok_p, raw_px, raw_py = pcall(reaper.ImGui_GetCursorScreenPos, ctx)
             p_min_x_cache, p_min_y_cache = tonumber(raw_px) or p_min_x_cache or 0.0, tonumber(raw_py) or p_min_y_cache or 0.0
             local p_min_x, p_min_y = p_min_x_cache, p_min_y_cache
+            
+            if UI.camera then
+                scroll_x = UI.camera.pan_x or scroll_x
+                scroll_y = UI.camera.pan_y or scroll_y
+            end
 
             local retval, tNum, fNum, pNum = reaper.GetLastTouchedFX()
             if retval then
@@ -599,7 +648,22 @@ local function loop()
             local is_canvas_bg_hovered = select(2, pcall(reaper.ImGui_IsWindowHovered, ctx)) 
             local is_ui_interaction = is_ui_hovered or (is_any_window_hovered and not is_canvas_bg_hovered)
             
-            if (wheel_x ~= 0 or wheel_y ~= 0) and not drag_state.active and not is_ui_interaction then 
+            local ctrl_held = false
+            if pcall(reaper.ImGui_Mod_Ctrl) then
+                if select(2, pcall(reaper.ImGui_IsKeyDown, ctx, reaper.ImGui_Mod_Ctrl())) then ctrl_held = true end
+            elseif pcall(reaper.ImGui_ModFlags_Ctrl) then
+                local ok_mods, mods = pcall(reaper.ImGui_GetKeyMods, ctx)
+                local ok_flag, ctrl_flag = pcall(reaper.ImGui_ModFlags_Ctrl)
+                if ok_mods and ok_flag and (mods & ctrl_flag) ~= 0 then ctrl_held = true end
+            end
+            if not ctrl_held then
+                local lk = (type(reaper.ImGui_Key_LeftCtrl) == "function") and reaper.ImGui_Key_LeftCtrl() or reaper.ImGui_Key_LeftCtrl
+                local rk = (type(reaper.ImGui_Key_RightCtrl) == "function") and reaper.ImGui_Key_RightCtrl() or reaper.ImGui_Key_RightCtrl
+                if lk and select(2, pcall(reaper.ImGui_IsKeyDown, ctx, lk)) then ctrl_held = true end
+                if rk and select(2, pcall(reaper.ImGui_IsKeyDown, ctx, rk)) then ctrl_held = true end
+            end
+            
+            if (wheel_x ~= 0 or wheel_y ~= 0) and not drag_state.active and not is_ui_interaction and not ctrl_held then 
                 scroll_x = scroll_x + (wheel_x * 40.0); scroll_y = scroll_y + (wheel_y * 40.0) 
             end
             
@@ -620,6 +684,11 @@ local function loop()
                 pcall(reaper.ImGui_SetMouseCursor, ctx, reaper.ImGui_MouseCursor_ResizeAll())
                 is_panning = true 
             else last_pan_mx, last_pan_my = nil, nil; is_panning = false end
+            
+            if UI.camera then
+                UI.camera.pan_x = scroll_x
+                UI.camera.pan_y = scroll_y
+            end
 
             if bg_hovered and select(2, pcall(reaper.ImGui_IsMouseReleased, ctx, 1)) then pcall(reaper.ImGui_OpenPopup, ctx, "CanvasMenu") end
             if select(2, pcall(reaper.ImGui_BeginPopup, ctx, "CanvasMenu")) then
@@ -655,15 +724,18 @@ local function loop()
                             end
                         end
                         if found_node then
-                            scroll_x = -(found_node.target_x - (avail_w/2) + (found_node.w/2))
-                            scroll_y = -(found_node.target_y - (avail_h/2) + (found_node.h/2))
+                            local z = UI.camera and UI.camera.zoom or 1.0
+                            scroll_x = -(found_node.target_x) + ((avail_w/2) / z) - ((found_node.w or 200)/2)
+                            scroll_y = -(found_node.target_y) + ((avail_h/2) / z) - ((found_node.h or 150)/2)
                         else
                             local p_name = type(t_data.param_name) == "string" and t_data.param_name or "Param "..tostring(t_data.paramNum)
-                            CreateTargetNode(mouse_x - p_min_x - scroll_x, mouse_y - p_min_y - scroll_y, t_data.trackNum, t_data.fxNum, t_data.paramNum, p_name, t_data.base_val, nil)
+                            local z = UI.camera and UI.camera.zoom or 1.0
+                            CreateTargetNode(((mouse_x - p_min_x) / z) - scroll_x, ((mouse_y - p_min_y) / z) - scroll_y, t_data.trackNum, t_data.fxNum, t_data.paramNum, p_name, t_data.base_val, nil)
                             needs_save = true
                         end
                     else
-                        CreateTargetNode(mouse_x - p_min_x - scroll_x, mouse_y - p_min_y - scroll_y, 0, 0, 0, "Param", 0.0, nil)
+                        local z = UI.camera and UI.camera.zoom or 1.0
+                        CreateTargetNode(((mouse_x - p_min_x) / z) - scroll_x, ((mouse_y - p_min_y) / z) - scroll_y, 0, 0, 0, "Param", 0.0, nil)
                         needs_save = true
                     end
                 end
@@ -684,28 +756,29 @@ local function loop()
                 n.w = (schema.grid_cols or 4) * UI.BASE_GRID
                 n.h = (schema.grid_rows or 4) * UI.BASE_GRID
                 
+                local z = UI.camera and UI.camera.zoom or 1.0
                 if drag_node_id == n.id then 
-                    n.target_x = (mouse_x - p_min_x - scroll_x) + drag_offset_x
-                    n.target_y = (mouse_y - p_min_y - scroll_y) + drag_offset_y
+                    n.target_x = (((mouse_x - p_min_x) / z) - scroll_x) + drag_offset_x
+                    n.target_y = (((mouse_y - p_min_y) / z) - scroll_y) + drag_offset_y
                     n.x, n.y = n.target_x, n.target_y 
                 else n.x, n.y = DSP.Lerp(n.x, n.target_x, app_dt * 15.0), DSP.Lerp(n.y, n.target_y, app_dt * 15.0) end
-                local n_sx, n_sy = math.floor(p_min_x + scroll_x + n.x), math.floor(p_min_y + scroll_y + n.y)
-                table.insert(vdom.headers, {id=n.id, x=n_sx, y=n_sy, w=n.w - 60, h=HEADER_H, idx=i})
+                local n_sx, n_sy = math.floor(p_min_x + ((scroll_x + n.x) * z)), math.floor(p_min_y + ((scroll_y + n.y) * z))
+                table.insert(vdom.headers, {id=n.id, x=n_sx, y=n_sy, w=(n.w - 60)*z, h=HEADER_H*z, idx=i})
                 
                 if n.type ~= "TARGET" then 
-                    local cx, cy = n_sx + n.w - 35, n_sy + n.h - 26 
-                    if n.type == "LFO" then cx = n_sx + n.w - 74; cy = n_sy + 2 end 
-                    if n.type == "GAIN" then cx = n_sx + n.w - 50; cy = n_sy + 2 end 
-                    if n.type == "COMPRESSOR" then cx = n_sx + n.w - 30; cy = n_sy + 2 end
-                    if n.type ~= "MIDI_IN" then table.insert(vdom.crosshairs, {id = n.id, x = cx, y = cy, w = 24, h = 20, col = n.col}) else table.insert(vdom.crosshairs, {id = n.id, x = n_sx + 106 - 12, y = n_sy + n.h - 13 - 10, w = 24, h = 20, col = n.col}) end 
+                    local cx, cy = n_sx + (n.w - 35)*z, n_sy + (n.h - 26)*z 
+                    if n.type == "LFO" then cx = n_sx + (n.w - 74)*z; cy = n_sy + 2*z end 
+                    if n.type == "GAIN" then cx = n_sx + (n.w - 50)*z; cy = n_sy + 2*z end 
+                    if n.type == "COMPRESSOR" then cx = n_sx + (n.w - 30)*z; cy = n_sy + 2*z end
+                    if n.type ~= "MIDI_IN" then table.insert(vdom.crosshairs, {id = n.id, x = cx, y = cy, w = 24*z, h = 20*z, col = n.col}) else table.insert(vdom.crosshairs, {id = n.id, x = n_sx + (106 - 12)*z, y = n_sy + (n.h - 13 - 10)*z, w = 24*z, h = 20*z, col = n.col}) end 
                 end
                 if n.type == "TARGET" or n.type == "MACRO" then 
-                    local ky = n_sy + HEADER_H + 50
-                    if n.type == "TARGET" then ky = ky + 10 end
-                    table.insert(vdom.dropzones, {id=n.id, port="IN", x=n_sx+(n.w/2), y=ky, rad=45}) 
-                elseif n.type == "TRANSFER_CURVE" then table.insert(vdom.dropzones, {id=n.id, port="IN", x=n_sx+10+(n.w-60)/2, y=n_sy+HEADER_H+10+(n.h-HEADER_H-55)/2, rad=45}) 
-                elseif n.type == "LFO" then local by = n_sy+n.h-60; table.insert(vdom.dropzones, {id=n.id, port="RATE", x=n_sx+215, y=by+30, rad=20}); table.insert(vdom.dropzones, {id=n.id, port="MIDI_IN", x=n_sx+40, y=by+30, rad=20}); table.insert(vdom.dropzones, {id=n.id, port="RISE", x=n_sx+320, y=by+20, rad=12}); table.insert(vdom.dropzones, {id=n.id, port="DELAY", x=n_sx+385, y=by+20, rad=12}); table.insert(vdom.dropzones, {id=n.id, port="SMOOTH", x=n_sx+450, y=by+20, rad=12}); table.insert(vdom.dropzones, {id=n.id, port="PHASE", x=n_sx+515, y=by+20, rad=12}) 
-                elseif n.type == "GAIN" then table.insert(vdom.dropzones, {id=n.id, port="GAIN", x=n_sx+n.w/2, y=n_sy+n.h/2, rad=80}) end
+                    local ky = n_sy + (HEADER_H + 50)*z
+                    if n.type == "TARGET" then ky = ky + 10*z end
+                    table.insert(vdom.dropzones, {id=n.id, port="IN", x=n_sx+(n.w/2)*z, y=ky, rad=45*z}) 
+                elseif n.type == "TRANSFER_CURVE" then table.insert(vdom.dropzones, {id=n.id, port="IN", x=n_sx+(10+(n.w-60)/2)*z, y=n_sy+(HEADER_H+10+(n.h-HEADER_H-55)/2)*z, rad=45*z}) 
+                elseif n.type == "LFO" then local by = n_sy+(n.h-60)*z; table.insert(vdom.dropzones, {id=n.id, port="RATE", x=n_sx+215*z, y=by+30*z, rad=20*z}); table.insert(vdom.dropzones, {id=n.id, port="MIDI_IN", x=n_sx+40*z, y=by+30*z, rad=20*z}); table.insert(vdom.dropzones, {id=n.id, port="RISE", x=n_sx+320*z, y=by+20*z, rad=12*z}); table.insert(vdom.dropzones, {id=n.id, port="DELAY", x=n_sx+385*z, y=by+20*z, rad=12*z}); table.insert(vdom.dropzones, {id=n.id, port="SMOOTH", x=n_sx+450*z, y=by+20*z, rad=12*z}); table.insert(vdom.dropzones, {id=n.id, port="PHASE", x=n_sx+515*z, y=by+20*z, rad=12*z}) 
+                elseif n.type == "GAIN" then table.insert(vdom.dropzones, {id=n.id, port="GAIN", x=n_sx+(n.w/2)*z, y=n_sy+(n.h/2)*z, rad=80*z}) end
             end
 
             local dl = select(2, pcall(reaper.ImGui_GetWindowDrawList, ctx))
@@ -849,8 +922,9 @@ local function loop()
                     for idx, n in ipairs(nodes) do
                         if n.id == active_drag_id then
                             drag_node_id = active_drag_id
-                            drag_offset_x = n.target_x - (mouse_x - p_min_x - scroll_x)
-                            drag_offset_y = n.target_y - (mouse_y - p_min_y - scroll_y)
+                            local z = UI.camera and UI.camera.zoom or 1.0
+                            drag_offset_x = n.target_x - (((mouse_x - p_min_x) / z) - scroll_x)
+                            drag_offset_y = n.target_y - (((mouse_y - p_min_y) / z) - scroll_y)
                             table.remove(nodes, idx)
                             table.insert(nodes, n)
                             break

@@ -2,7 +2,7 @@
 -- ALGO: 0 | THEME: Default
 
 return {
-  grid_cols = 12,
+  grid_cols = 13,
   grid_rows = 6,
   seed_hex = 10878975,
   active_palette = {
@@ -15,7 +15,7 @@ return {
   components = {
     {
       id = 'err_txt', type = 'TogglePill',
-      x = 191, y = 9, w = 32, h = 18, radius = 16, align = 1,
+      x = 210, y = 32, w = 32, h = 18, radius = 16, align = 1,
       param_key = 'unmapped', default_val = 1.000000, color_token = 'Primary', is_bipolar = false,
       label = 'SCHEMA MISSING',
       routes = {},
@@ -25,17 +25,19 @@ return {
     },
     {
       id = 'ReaComp_AuraKnob_6268', type = 'AuraKnob',
-      x = 56, y = 67, w = 32, h = 32, radius = 26, align = 1,
-      param_key = 'unmapped', default_val = 0.000000, color_token = 'Teal', is_bipolar = false,
+      x = 103, y = 72, w = 32, h = 32, radius = 26, align = 1,
+      param_key = 'unmapped', default_val = 0.000000, color_token = 'Accent_B', is_bipolar = false,
       label = 'AURAKNOB',
-      routes = {},
+      routes = {
+        { type = "INTERNAL", target = "thresh", depth = 1.0000, label = "Threshold" },
+      },
       get_format = function(s, v) return string.format('%.1f', v) end,
       norm_to_real = function(n) return n end,
       real_to_norm = function(r) return r end
     },
     {
       id = 'ReaComp_Fader_5480', type = 'Fader',
-      x = 15, y = 33, w = 30, h = 120, radius = 16, align = 1,
+      x = 17, y = 70, w = 30, h = 120, radius = 16, align = 1,
       param_key = 'unmapped', default_val = 0.000000, color_token = 'Teal', is_bipolar = false,
       label = 'FADER',
       routes = {},
@@ -45,7 +47,7 @@ return {
     },
     {
       id = 'ReaComp_ToggleLever_1010', type = 'ToggleLever',
-      x = 190, y = 70, w = 20, h = 41, radius = 16, align = 1,
+      x = 216, y = 78, w = 20, h = 41, radius = 16, align = 1,
       param_key = 'unmapped', default_val = 0.000000, color_token = 'Teal', is_bipolar = false,
       label = 'TOGGLELEVER',
       routes = {},
@@ -55,7 +57,7 @@ return {
     },
     {
       id = 'ReaComp_Dropdown_5423', type = 'Dropdown',
-      x = 318, y = 9, w = 140, h = 28, radius = 16, align = 1,
+      x = 288, y = 27, w = 140, h = 28, radius = 16, align = 1,
       param_key = 'unmapped', default_val = 0.000000, color_token = 'Teal', is_bipolar = false,
       label = 'DROPDOWN',
       routes = {},
@@ -65,7 +67,7 @@ return {
     },
     {
       id = 'ReaComp_RadioStrip_3453', type = 'RadioStrip',
-      x = 266, y = 184, w = 192, h = 25, radius = 16, align = 1,
+      x = 314, y = 165, w = 192, h = 25, radius = 16, align = 1,
       param_key = 'unmapped', default_val = 0.000000, color_token = 'Teal', is_bipolar = false,
       label = 'RADIOSTRIP',
       routes = {},
